@@ -50,7 +50,9 @@ for both script generation and Omni video generation.
 
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
 The pipeline caps script length and stops before paid video generation if the synthesized
-narration exceeds the selected duration.
+narration exceeds the selected duration by more than two seconds (never allowing more than
+60 seconds total). Minor TTS timing variation is allowed; the renderer loops the final scene
+to cover a small overrun.
 Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
 `GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
 $3.25 estimated-cost limit; increase that variable only if you approve the higher spend.

@@ -9,12 +9,20 @@ from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
+NARRATION_OVERRUN_TOLERANCE_SECONDS = 2
+MAX_SHORT_SECONDS = 60
+
+
 def _validate_narration_duration(duration: float, target_seconds: int) -> None:
-    if duration > target_seconds:
+    max_duration = min(
+        target_seconds + NARRATION_OVERRUN_TOLERANCE_SECONDS,
+        MAX_SHORT_SECONDS,
+    )
+    if duration > max_duration:
         raise RuntimeError(
-            f"Narration is {duration:.1f}s, longer than TARGET_SECONDS="
-            f"{target_seconds}. Shorten the generated script or choose a longer "
-            "target; AI video generation was stopped to avoid paying for an overlong video."
+            f"Narration is {duration:.1f}s; maximum allowed for TARGET_SECONDS="
+            f"{target_seconds} is {max_duration}s. AI video generation was stopped "
+            "to avoid paying for an overlong video."
         )
 
 
