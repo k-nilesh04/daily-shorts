@@ -74,8 +74,9 @@ needed for generating the story and metadata.
 4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
 
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
-Script word limits are derived from the measured speaking rate of about 2.5 words per second, so a
-45-second target asks Gemini for roughly 113 words instead of the previous ~58. The pipeline stops
+Script word limits start from a conservative speaking rate of about 2.0 words per second, so a
+45-second target asks Gemini for roughly 90 words. The pipeline then measures the real TTS
+duration and regenerates with an adjusted budget if it lands outside the accepted window. The pipeline stops
 before paid video generation when the synthesized narration is too long (more than two seconds over
 the target, never above 60 seconds total) **or** more than 15% shorter than the target. Minor TTS
 timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, a

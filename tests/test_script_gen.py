@@ -40,7 +40,8 @@ class ScriptBudgetTests(unittest.TestCase):
     def test_word_budget_matches_measured_speaking_rate(self):
         min_words, target_words, max_words = word_budget(45)
         # ~2.5 words/second, not the old ~1.3 words/second budget.
-        self.assertGreaterEqual(target_words, 110)
+        self.assertGreaterEqual(target_words, 80)
+        self.assertLessEqual(target_words, 100)
         self.assertLessEqual(min_words, target_words)
         self.assertLessEqual(target_words, max_words)
 

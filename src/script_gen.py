@@ -16,7 +16,7 @@ REQUIRED = {
 # Measured with edge-tts 7.3.1, voice hi-IN-MadhurNeural, rate +0%:
 # ~2.5 spoken words per second. The old budget (target * 1.3 words) produced
 # roughly half the requested duration, so scripts now aim at the real rate.
-WORDS_PER_SECOND = 2.5
+WORDS_PER_SECOND = 2.0
 MIN_WORDS_RATIO = 0.93
 SECONDS_PER_SCENE = 15
 MAX_SHORT_SECONDS = 60
@@ -24,16 +24,17 @@ OVERRUN_ALLOWANCE_SECONDS = 2
 MAX_GENERATE_ATTEMPTS = 3
 
 
-def word_budget(target_seconds: int) -> tuple[int, int, int]:
+def word_budget(target_seconds: int, words_per_second: float = WORDS_PER_SECOND) -> tuple[int, int, int]:
     """Return (min_words, target_words, max_words) for the requested duration.
 
     The maximum is derived from the largest narration the renderer accepts, so a
     script can never be longer than the pipeline is willing to publish.
     """
-    target_words = round(target_seconds * WORDS_PER_SECOND)
-    min_words = round(target_seconds * WORDS_PER_SECOND * MIN_WORDS_RATIO)
+    words_per_second = max(1.0, float(words_per_second))
+    target_words = round(target_seconds * words_per_second)
+    min_words = round(target_seconds * words_per_second * MIN_WORDS_RATIO)
     max_seconds = min(target_seconds + OVERRUN_ALLOWANCE_SECONDS, MAX_SHORT_SECONDS)
-    max_words = round(max_seconds * WORDS_PER_SECOND)
+    max_words = round(max_seconds * words_per_second)
     return min_words, target_words, max_words
 
 
@@ -55,8 +56,8 @@ def _trim_to_word_limit(script: str, max_words: int) -> str:
     return truncated.rstrip(",;:- ") + "."
 
 
-def _prompt(cfg: Config, avoid: list[str], correction: str = "") -> str:
-    min_words, target_words, max_words = word_budget(cfg.target_seconds)
+def _prompt(cfg: Config, avoid: list[str], correction: str = "", words_per_second: float = WORDS_PER_SECOND) -> str:
+    min_words, target_words, max_words = word_budget(cfg.target_seconds, words_per_second)
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
     scene_count = math.ceil(cfg.target_seconds / SECONDS_PER_SCENE)
     language_rule = (
@@ -196,13 +197,13 @@ def _auto_trim(resp, scene_count: int, max_words: int) -> dict | None:
         return None
 
 
-def generate(cfg: Config, avoid: list[str]) -> dict:
+def generate(cfg: Config, avoid: list[str], words_per_second: float = WORDS_PER_SECOND) -> dict:
     if not cfg.gemini_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
 
     scene_count = math.ceil(cfg.target_seconds / SECONDS_PER_SCENE)
-    min_words, _target_words, max_words = word_budget(cfg.target_seconds)
-    prompt = _prompt(cfg, avoid)
+    min_words, _target_words, max_words = word_budget(cfg.target_seconds, words_per_second)
+    prompt = _prompt(cfg, avoid, words_per_second=words_per_second)
     last_error: Exception | None = None
 
     for attempt in range(MAX_GENERATE_ATTEMPTS):
@@ -236,6 +237,7 @@ def generate(cfg: Config, avoid: list[str]) -> dict:
                     f"Keep the script at or below {max_words} whitespace-separated words; "
                     "count the words before returning the JSON."
                 ),
+                words_per_second=words_per_second,
             )
             continue
         except ValueError as error:
@@ -258,6 +260,7 @@ def generate(cfg: Config, avoid: list[str]) -> dict:
                     f"Use exactly {scene_count} scene prompts and keep the script between "
                     f"{min_words} and {max_words} words."
                 ),
+                words_per_second=words_per_second,
             )
             continue
 

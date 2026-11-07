@@ -70,13 +70,54 @@ def main() -> int:
     _prepare_work_dir(cfg.work_dir)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. script
-    meta = script_gen.generate(cfg, history.recent_topics(cfg.history_file))
+    MAX_SCRIPT_ATTEMPTS = 3
+    MIN_WORDS_PER_SECOND = 1.5
+    MAX_WORDS_PER_SECOND = 3.0
 
-    # 2. voice + word timings
     voice = cfg.work_dir / "voice.mp3"
-    duration, words = tts.synthesize(cfg, meta["script"], voice)
-    _validate_narration_duration(duration, cfg.target_seconds)
+    words_per_second = script_gen.WORDS_PER_SECOND
+    avoid = history.recent_topics(cfg.history_file)
+
+    # 1. script + 2. voice, with adaptive retry based on the measured TTS rate.
+    # The fixed words/second estimate is only a starting point; real narration
+    # length varies with the voice and content, so regenerate with feedback
+    # until the duration lands inside the accepted window.
+    last_duration = None
+    for attempt in range(MAX_SCRIPT_ATTEMPTS):
+        meta = script_gen.generate(cfg, avoid, words_per_second=words_per_second)
+        try:
+            duration, words = tts.synthesize(cfg, meta["script"], voice)
+        except RuntimeError:
+            if attempt == MAX_SCRIPT_ATTEMPTS - 1:
+                raise
+            log.warning("TTS failed; regenerating script (attempt %d/%d)",
+                        attempt + 2, MAX_SCRIPT_ATTEMPTS)
+            continue
+        last_duration = duration
+        try:
+            _validate_narration_duration(duration, cfg.target_seconds)
+            break
+        except RuntimeError as error:
+            if attempt == MAX_SCRIPT_ATTEMPTS - 1:
+                raise
+            word_count = len(meta["script"].split())
+            measured = word_count / duration if duration > 0 else words_per_second
+            measured = min(MAX_WORDS_PER_SECOND, max(MIN_WORDS_PER_SECOND, measured))
+            # If narration was too long, speak fewer words next time; if too
+            # short, speak more. Nudge toward the measured rate.
+            if duration > cfg.target_seconds:
+                words_per_second = max(MIN_WORDS_PER_SECOND, measured * 0.9)
+            else:
+                words_per_second = min(MAX_WORDS_PER_SECOND, measured * 1.1)
+            log.warning(
+                "Narration is %.1fs for %d words (%.2f words/s); regenerating "
+                "with %.2f words/s (attempt %d/%d): %s",
+                duration, word_count, measured, words_per_second,
+                attempt + 2, MAX_SCRIPT_ATTEMPTS, error,
+            )
+    else:
+        # Loop exhausted without break: validate the last measurement to raise.
+        _validate_narration_duration(last_duration, cfg.target_seconds)
 
     # 3. Generate the configured video asset(s).
     is_json2video = cfg.video_provider == "json2video"
