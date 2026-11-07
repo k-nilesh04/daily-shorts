@@ -19,7 +19,11 @@ class ScriptGenerationTests(unittest.TestCase):
             "description": "A fact about Roman concrete.",
             "tags": ["history"],
             "keywords": ["roman concrete"],
-            "hook_prompt": "Show an ancient Roman structure.",
+            "scene_prompts": [
+                "A close view of ancient Roman concrete being mixed.",
+                "An ancient Roman harbor structure beside the sea.",
+                "Modern scientists studying ancient Roman concrete.",
+            ],
         }
         client = client_factory.return_value
         client.models.generate_content.return_value = SimpleNamespace(

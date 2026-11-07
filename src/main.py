@@ -1,11 +1,11 @@
-"""Daily pipeline:  script -> voice -> footage -> render -> (upload) -> history."""
+"""Daily pipeline:  script -> voice -> AI video -> render -> (upload) -> history."""
 import argparse
 import json
 import logging
 import shutil
 import sys
 
-from . import config, footage, history, omni, render, script_gen, tts, youtube
+from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
@@ -17,6 +17,9 @@ def main() -> int:
 
     cfg = config.load()
     do_upload = args.upload or cfg.upload
+    if do_upload and not cfg.can_upload:
+        log.error("UPLOAD requested but YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN missing")
+        return 1
 
     shutil.rmtree(cfg.work_dir, ignore_errors=True)
     cfg.work_dir.mkdir(parents=True)
@@ -29,28 +32,26 @@ def main() -> int:
     voice = cfg.work_dir / "voice.mp3"
     duration, words = tts.synthesize(cfg, meta["script"], voice)
 
-    # 3. footage (+ optional hook)
-    hook = omni.get_hook(cfg, meta["hook_prompt"], cfg.work_dir)
-    need = render.segments_needed(cfg, duration, hook is not None)
-    clips = footage.fetch(cfg, meta["keywords"], need, cfg.work_dir / "clips")
-    meta["footage_credits"] = list({
-        clip.path: clip.credit() for clip in clips
-    }.values())
+    # 3. Generate story-matched video scenes in parallel.
+    meta["video_generation"] = {
+        "model": video_gen.MODEL,
+        "resolution": video_gen.RESOLUTION,
+        "scene_count": len(meta["scene_prompts"]),
+        "estimated_video_cost_usd": round(
+            video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2),
+    }
+    meta_path = cfg.output_dir / "meta.json"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    clips = video_gen.generate_scenes(cfg, meta["scene_prompts"], cfg.work_dir / "scenes")
 
     # 4. render
     video = cfg.output_dir / "video.mp4"
-    render.build(cfg, [clip.path for clip in clips], hook, voice, duration, words,
-                 video, cfg.work_dir / "render")
-    (cfg.output_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    render.build(cfg, clips, voice, duration, words, video, cfg.work_dir / "render")
 
     # 5. upload
     if not do_upload:
         log.info("Upload skipped (dry run). Video: %s", video)
         return 0
-    if not cfg.can_upload:
-        log.error("UPLOAD requested but YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN missing")
-        return 1
     vid = youtube.upload(cfg, video, meta)
 
     # 6. remember the topic only after a successful upload

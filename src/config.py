@@ -19,9 +19,10 @@ def _env(name: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class Config:
     # content
-    niche: str = field(default_factory=lambda: _env("NICHE", "surprising science and history facts"))
-    language: str = field(default_factory=lambda: _env("LANGUAGE", "English"))
-    tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "en-US-AndrewNeural"))
+    niche: str = field(default_factory=lambda: _env(
+        "NICHE", "Hindi short storytelling about surprising science and history"))
+    language: str = field(default_factory=lambda: _env("LANGUAGE", "Hinglish"))
+    tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "hi-IN-MadhurNeural"))
     tts_rate: str = field(default_factory=lambda: _env("TTS_RATE", "+0%"))
     target_seconds: int = field(default_factory=lambda: int(_env("TARGET_SECONDS", "45")))
     gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-2.5-flash"))
@@ -32,7 +33,7 @@ class Config:
     fps: int = 30
     caption_font: str = field(default_factory=lambda: _env("CAPTION_FONT", "DejaVu Sans"))
     caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "78")))
-    caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", True))
+    caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", False))
     segment_seconds: float = field(default_factory=lambda: float(_env("SEGMENT_SECONDS", "4.5")))
 
     @property
@@ -56,15 +57,17 @@ class Config:
     # behaviour
     upload: bool = field(default_factory=lambda: _bool("UPLOAD", False))
     privacy_status: str = field(default_factory=lambda: _env("PRIVACY_STATUS", "private"))
-    use_omni: bool = field(default_factory=lambda: _bool("USE_OMNI", False))
-    omni_key: str = field(default_factory=lambda: _env("OMNI_API_KEY"))
-    omni_hook_seconds: float = field(default_factory=lambda: float(_env("OMNI_HOOK_SECONDS", "6")))
+    ai_video_key: str = field(default_factory=lambda: _env("OMNI_API_KEY", _env("GEMINI_API_KEY")))
+    ai_video_max_usd: float = field(default_factory=lambda: float(_env("AI_VIDEO_MAX_USD", "3.25")))
 
     # paths
     output_dir: Path = ROOT / "output"
     work_dir: Path = ROOT / "work"
-    hooks_dir: Path = ROOT / "hooks"
     history_file: Path = ROOT / "data" / "history.json"
+
+    def __post_init__(self) -> None:
+        if not 30 <= self.target_seconds <= 60:
+            raise ValueError("TARGET_SECONDS must be between 30 and 60")
 
     @property
     def can_upload(self) -> bool:

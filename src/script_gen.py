@@ -1,5 +1,6 @@
 """Step 1 - ask Gemini for the video script + YouTube metadata as strict JSON."""
 import json
+import math
 import re
 
 from google import genai
@@ -8,18 +9,27 @@ from google.genai import types
 from .config import Config
 from .util import log, retry
 
-REQUIRED = {"topic", "title", "script", "description", "tags", "keywords", "hook_prompt"}
+REQUIRED = {
+    "topic", "title", "script", "description", "tags", "keywords", "scene_prompts",
+}
 
 
 def _prompt(cfg: Config, avoid: list[str]) -> str:
     words = int(cfg.target_seconds * 2.5)  # ~2.5 spoken words per second
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
+    scene_count = math.ceil(cfg.target_seconds / 15)
+    language_rule = (
+        "Use natural spoken Hinglish in Latin letters; do not use Devanagari."
+        if cfg.language.lower() == "hinglish"
+        else f"Write naturally in {cfg.language}."
+    )
     return f"""You write scripts for a faceless YouTube Shorts channel.
 Niche: {cfg.niche}
 Language of narration/title/description: {cfg.language}
 
 Write ONE new short video. Rules:
 - Narration: about {words} words (a {cfg.target_seconds}-second read), spoken style.
+- {language_rule}
 - First sentence is a strong hook (a surprising claim or question). No greetings, no "welcome".
 - Keep the story vivid and fast, not like an encyclopedia entry: use conversational phrasing,
   concrete imagery, varied sentence lengths, and an escalating reveal.
@@ -30,6 +40,11 @@ Write ONE new short video. Rules:
 - Plain sentences only: no emojis, hashtags, stage directions or markdown in "script".
 - Do NOT repeat any of these past topics:
 {avoid_txt}
+- Create exactly {scene_count} visually distinct, chronological scene prompts for AI video generation.
+- Each scene prompt must describe one 15-second, vertical 9:16 cinematic documentary shot that
+  directly illustrates this story. Use specific era-appropriate objects, locations, and action.
+- Scene prompts must be in English, must not add facts absent from the narration, and must request
+  no speech, no captions, no writing, no logos, and no watermarks. The pipeline adds narration/captions.
 
 Return ONLY a JSON object with exactly these keys:
 {{
@@ -38,12 +53,12 @@ Return ONLY a JSON object with exactly these keys:
   "script": "the full narration text",
   "description": "2-3 sentence description in {cfg.language}",
   "tags": ["8-12 short tags"],
-  "keywords": ["6 ENGLISH stock-footage search phrases, 1-3 words each, concrete visuals, in story order"],
-  "hook_prompt": "one ENGLISH sentence describing a striking 6-second opening shot for this topic"
+  "keywords": ["6 ENGLISH visual concepts from the story, in story order"],
+  "scene_prompts": ["English prompt for scene 1", "English prompt for scene 2"]
 }}"""
 
 
-def _parse(text: str) -> dict:
+def _parse(text: str, scene_count: int) -> dict:
     text = text.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
     data = json.loads(text)
@@ -52,6 +67,11 @@ def _parse(text: str) -> dict:
         raise ValueError(f"Gemini JSON missing keys: {sorted(missing)}")
     if not isinstance(data["keywords"], list) or not data["keywords"]:
         raise ValueError("keywords must be a non-empty list")
+    if (not isinstance(data["scene_prompts"], list)
+            or len(data["scene_prompts"]) != scene_count
+            or not all(isinstance(prompt, str) and prompt.strip()
+                       for prompt in data["scene_prompts"])):
+        raise ValueError(f"scene_prompts must contain exactly {scene_count} non-empty prompts")
     data["title"] = str(data["title"]).strip()[:95]
     data["script"] = " ".join(str(data["script"]).split())
     data["tags"] = [str(t).strip().lstrip("#") for t in data["tags"]][:12]
@@ -74,6 +94,6 @@ def generate(cfg: Config, avoid: list[str]) -> dict:
             temperature=0.9,
         ),
     )
-    data = _parse(resp.text)
+    data = _parse(resp.text, math.ceil(cfg.target_seconds / 15))
     log.info("Script ready: %s (%d words)", data["title"], len(data["script"].split()))
     return data

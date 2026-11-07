@@ -26,21 +26,7 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     description = meta["description"]
-    credits = meta.get("footage_credits", [])
-    if credits:
-        lines = []
-        for credit in credits:
-            creator = f" — {credit['creator']}" if credit.get("creator") else ""
-            license_text = credit["license"]
-            if credit.get("license_url"):
-                license_text = f"{license_text}: {credit['license_url']}"
-            lines.append(
-                f"- {credit['title']}{creator} (Wikimedia Commons, {license_text}) "
-                f"{credit['source_url']}")
-        description += "\n\nFootage credits:\n" + "\n".join(lines)
     description += "\n\n#Shorts"
-    if len(description) > 5000:
-        raise ValueError("Video description and required footage credits exceed YouTube's 5000-character limit")
     body = {
         "snippet": {
             "title": meta["title"][:100],

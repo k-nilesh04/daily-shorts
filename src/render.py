@@ -1,5 +1,4 @@
 """Step 4 - assemble the final 1080x1920 MP4 with FFmpeg."""
-import math
 import subprocess
 from pathlib import Path
 
@@ -13,11 +12,6 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
     if res.returncode != 0:
         log.error("FFmpeg failed:\n%s", res.stderr[-2500:])
         raise RuntimeError("ffmpeg failed")
-
-
-def segments_needed(cfg: Config, duration: float, has_hook: bool) -> int:
-    body = duration - (cfg.omni_hook_seconds if has_hook else 0)
-    return max(1, math.ceil(body / cfg.segment_seconds))
 
 
 def _normalize(cfg: Config, src: Path, dst: Path, seconds: float) -> None:
@@ -73,16 +67,11 @@ def _presentation_filter(cfg: Config, duration: float) -> str:
     )
 
 
-def build(cfg: Config, clips: list[Path], hook: Path | None, voice: Path,
+def build(cfg: Config, clips: list[Path], voice: Path,
           duration: float, words: list[dict], out: Path, work: Path) -> Path:
     work.mkdir(parents=True, exist_ok=True)
     plan: list[tuple[Path, float]] = []
     remaining = duration
-
-    if hook:
-        h = min(cfg.omni_hook_seconds, duration * 0.4)
-        plan.append((hook, h))
-        remaining -= h
 
     n = len(clips)
     per = max(1.5, remaining / n) if n else remaining

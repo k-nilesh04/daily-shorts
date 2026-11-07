@@ -29,17 +29,15 @@ class OfflinePipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             ff("-f", "lavfi", "-i", "sine=frequency=220:duration=12", str(d / "voice.mp3"))
-            # one landscape clip, one SHORT portrait clip (forces loop path), one hook
+            # one landscape clip and one SHORT portrait AI-scene clip (forces loop path)
             ff("-f", "lavfi", "-i", "testsrc=size=1280x720:rate=24:duration=6", "-pix_fmt", "yuv420p", str(d / "a.mp4"))
             ff("-f", "lavfi", "-i", "testsrc2=size=720x1280:rate=25:duration=2", "-pix_fmt", "yuv420p", str(d / "b.mp4"))
-            ff("-f", "lavfi", "-i", "smptebars=size=1080x1920:rate=30:duration=6", "-pix_fmt", "yuv420p", str(d / "hook.mp4"))
             dur = probe_duration(d / "voice.mp3")
             words = _even_timings("Honey never spoils because it is low in water and acidic " * 2, dur)
 
             out = d / "video.mp4"
-            need = render.segments_needed(cfg, dur, True)
-            clips = ([d / "a.mp4", d / "b.mp4"] * 5)[:need]
-            render.build(cfg, clips, d / "hook.mp4", d / "voice.mp3", dur, words, out, d / "r")
+            clips = [d / "a.mp4", d / "b.mp4"]
+            render.build(cfg, clips, d / "voice.mp3", dur, words, out, d / "r")
 
             self.assertTrue(out.exists())
             info = subprocess.run(

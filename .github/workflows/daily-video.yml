@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +39,18 @@ jobs:
       - name: Offline smoke test
         run: python -m unittest discover -s tests
 
+      - name: Check upload credentials before paid generation
+        if: github.event_name == 'schedule' || inputs.upload == true
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          if [ -z "$YT_CLIENT_ID" ] || [ -z "$YT_CLIENT_SECRET" ] || [ -z "$YT_REFRESH_TOKEN" ]; then
+            echo "Paid generation is stopped because YouTube upload was requested but upload credentials are missing." >&2
+            exit 1
+          fi
+
       - name: Generate video
         env:
           UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == true }}
@@ -47,13 +59,13 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           OMNI_API_KEY: ${{ secrets.OMNI_API_KEY }}
-          USE_OMNI: ${{ vars.USE_OMNI }}
           NICHE: ${{ vars.NICHE }}
           LANGUAGE: ${{ vars.LANGUAGE }}
           TTS_VOICE: ${{ vars.TTS_VOICE }}
           TARGET_SECONDS: ${{ vars.TARGET_SECONDS }}
           PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
         run: python -m src.main
 
       - name: Save video + metadata

@@ -1,94 +1,93 @@
 # daily-shorts
 
-Fully automated daily YouTube Shorts, rendered for free on GitHub Actions.
+Automated 30–60 second Hindi/Hinglish YouTube storytelling videos, rendered on GitHub Actions.
 
 ```
-cron → Gemini (script+metadata) → edge-tts (voice + word timings)
-     → Wikimedia Commons (reusable video clips) → [optional hook clip]
-     → FFmpeg (square footage, black 9:16 canvas, animated captions/HUD)
-     → YouTube upload → history.json
+Gemini (story + scene prompts) → edge-tts (Hinglish narration + word timings)
+  → Gemini Omni Flash (matching 15-second AI video scenes, generated in parallel)
+  → FFmpeg (centered square video, black vertical canvas, motion graphics + captions)
+  → optional private YouTube upload → topic history
 ```
 
-Default niche: *surprising science and history facts* (change with the `NICHE` variable).
-The video places a square, gently zooming footage window at the center of a black vertical canvas,
-with cyan technical frame accents, a moving scan line and progress bar, and timed word-highlight
-captions.
+Default niche: *surprising science and history facts*. The final video is 1080×1920, with AI-generated
+portrait footage cropped into the centered square design.
 
-## Setup, in order
+## Important: video-generation charges
 
-### 1. Keys (free)
-- **Gemini**: https://aistudio.google.com/apikey → `GEMINI_API_KEY`
+Gemini Omni video generation is **paid** and has no free tier. Google's [current pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-omni-1.2-flash)
+estimates about **$0.07 per second for 720p output**. A 45-second Short uses three 15-second scene
+requests, generated in parallel, and costs about **$3.15** for video output. A 60-second Short is
+about **$4.20**. Parallel generation reduces waiting time, not cost.
 
-### 2. Try it locally (needs Python 3.12 + FFmpeg)
+`AI_VIDEO_MAX_USD` defaults to `$3.25`. The workflow refuses a video whose estimated scene cost
+exceeds that limit, so the default supports up to 45 seconds. This is an application-side estimate,
+**not a provider-enforced billing cap**; actual charges can differ. Set a Google Cloud billing budget
+alert (for example, $100/month) and review actual usage. At one 45-second generation per day,
+expected video-generation cost is about **$94.50 per 30 days**. Manual test runs also incur
+generation charges even when YouTube upload is disabled.
+
+## Setup
+
+### 1. Gemini API
+
+Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey). Enable a paid
+Gemini API tier/billing for the Google Cloud project attached to that key. The same key can be used
+for both script generation and Omni video generation.
+
+### 2. Run on GitHub Actions
+
+1. Add repository secret `GEMINI_API_KEY` under **Settings → Secrets and variables → Actions**.
+   If you use a separate API key for video, add `OMNI_API_KEY`; otherwise the workflow uses
+   `GEMINI_API_KEY` for both.
+2. The default `AI_VIDEO_MAX_USD=3.25` is set in code. To override it, add a repository Actions
+   variable named `AI_VIDEO_MAX_USD` only after reviewing the current pricing.
+3. Open **Actions → Daily Video → Run workflow**, select `main`, and keep `upload = false` for a
+   render-only test. This still calls the paid video-generation API.
+4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
+
+The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
+Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
+`GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
+$3.25 estimated-cost limit; increase that variable only if you approve the higher spend.
+
+### 3. Optional YouTube upload
+
+1. In Google Cloud Console, enable **YouTube Data API v3**.
+2. Configure the OAuth consent screen and create an OAuth client ID for a Desktop app.
+3. Run `python scripts/get_youtube_token.py client_secret.json` locally with the channel account.
+4. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository Actions secrets.
+5. Test using **Run workflow** with `upload = true`. Uploads are private by default.
+
+Scheduled runs upload automatically once the YouTube secrets are configured. Scheduled runs and
+manual runs requesting an upload stop before paid generation when YouTube secrets are missing.
+Review generated videos and verify facts before publishing them publicly.
+
+## Local development
+
+Requires Python 3.12 and FFmpeg.
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env            # add your Gemini key
+cp .env.example .env            # add Gemini key and approve video-generation spend
 set -a; source .env; set +a
-python -m unittest discover -s tests     # offline sanity check
-python -m src.main                       # dry run → output/video.mp4
+python -m unittest discover -s tests
+python -m src.main              # generates a paid video; does not upload
 ```
-Watch `output/video.mp4`. Tune `NICHE`, `TTS_VOICE`, `TARGET_SECONDS` until you'd post it.
-Voices: `edge-tts --list-voices` (Hindi example: `hi-IN-SwaraNeural`; for Hindi captions
-also use a font with Devanagari, e.g. `CAPTION_FONT="Noto Sans Devanagari"`).
-
-### 3. Push to GitHub and run in the cloud
-1. Create a repo, push this folder.
-2. **Settings → Secrets and variables → Actions → Secrets**: add `GEMINI_API_KEY`.
-3. **Actions → Daily Video → Run workflow** with *upload = false*.
-4. Download the `video-N` artifact and compare with your local result.
-
-### 4. YouTube upload (do last)
-1. Google Cloud Console → new project → enable **YouTube Data API v3**.
-2. OAuth consent screen → External → add yourself as a test user → then **Publish app → In production**
-   (otherwise the refresh token expires after 7 days).
-3. Credentials → Create **OAuth client ID → Desktop app** → download JSON.
-4. Locally: `python scripts/get_youtube_token.py client_secret.json` → log in with the channel's account.
-5. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, `YT_REFRESH_TOKEN` as repo secrets.
-6. Run the workflow manually with *upload = true*. The video lands in YouTube Studio as **private**.
-
-New/unaudited API projects are forced to private by YouTube. Publish from Studio each day (it doubles as a
-quality check), and apply for the API compliance audit if you want automatic public uploads.
-
-### 5. Go daily
-The cron in `.github/workflows/daily-video.yml` is already set (09:00 IST). Scheduled runs upload automatically.
-The workflow commits `data/history.json` after each run, which also keeps the schedule from being auto-disabled
-after 60 days of inactivity.
-
-## Repo variables (Settings → Secrets and variables → Actions → Variables) — all optional
-`NICHE`, `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS`, `PRIVACY_STATUS` (private/unlisted/public),
-`GEMINI_MODEL`, `USE_OMNI`.
-
-## Footage source
-Video clips are searched and downloaded from Wikimedia Commons without an API key. The available
-selection can be smaller and less like a stock-footage library than commercial stock libraries. To
-avoid silently using clips with restrictive licenses, the pipeline accepts only public-domain, CC0,
-and attribution-only CC BY clips; it skips licenses such as CC BY-SA, CC BY-NC, and CC BY-ND. It
-records source and license credits in `output/meta.json` and adds them to the YouTube description.
-Check each file's Commons page: Commons notes that reuse terms can have errors and other restrictions
-may apply. See the [MediaWiki API search](https://www.mediawiki.org/wiki/API:Search), [image
-information](https://www.mediawiki.org/wiki/API:Imageinfo), and [Commons reuse
-guidance](https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia).
-
-## Optional hook clip
-- **Free**: drop your own `.mp4` clips (made manually in Google Flow / YouTube Shorts) into `hooks/`.
-  One is picked at random as the opening shot. These user-provided clips are not covered by the
-  Wikimedia Commons attribution list.
-- **Paid (Gemini Omni API, no free tier, ~$0.10/sec)**: add secret `OMNI_API_KEY`, set variable `USE_OMNI=true`.
-  `src/omni.py` is written from public docs for a *preview* API and has **not been tested against the live API**;
-  if the call fails the run silently falls back to stock footage. Set a Google Cloud budget alert first.
 
 ## Project layout
+
 ```
-src/main.py        orchestration            src/render.py      FFmpeg assembly
-src/script_gen.py  Gemini script JSON       src/captions.py    ASS captions
-src/tts.py         edge-tts + timings       src/youtube.py     upload
-src/footage.py     Commons video download   src/omni.py        optional hook
-tests/             offline FFmpeg smoke test
+src/main.py        pipeline orchestration
+src/script_gen.py  Hinglish story, metadata, and scene prompts
+src/video_gen.py   paid Omni video generation and cost preflight
+src/tts.py         narration and word timings
+src/render.py      FFmpeg assembly and motion design
+src/captions.py    animated word-group captions
+src/youtube.py     private-first upload
+tests/             offline and mocked API tests
 ```
 
-## Quality & policy notes
-- Review the first weeks of videos before making them public; fully automated, repetitive content can be
-  treated as "inauthentic / mass-produced" by YouTube. Vary topics, hooks, voices.
-- The prompt asks Gemini for true facts only, but LLMs can still be wrong. Spot-check scripts in `output/meta.json`.
-- Check the source and license credits for every Commons clip before publishing.
+The [Gemini video guide](https://ai.google.dev/gemini-api/docs/video) documents 3–15 second video
+generation through the Interactions API. This project requests 15-second, 720p, vertical clips and
+adds its own narration and captions.
