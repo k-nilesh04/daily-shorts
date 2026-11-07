@@ -35,8 +35,8 @@ def main() -> int:
     cfg = config.load()
     do_upload = args.upload or cfg.upload
     if do_upload and not cfg.can_upload:
-        log.error("UPLOAD requested but YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN missing")
-        return 1
+        log.warning("YT environment variables (YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN) not found; bypassing upload.")
+        do_upload = False
 
     shutil.rmtree(cfg.work_dir, ignore_errors=True)
     cfg.work_dir.mkdir(parents=True)

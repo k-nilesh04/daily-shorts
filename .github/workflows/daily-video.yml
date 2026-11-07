@@ -50,8 +50,7 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
           if [ -z "$YT_CLIENT_ID" ] || [ -z "$YT_CLIENT_SECRET" ] || [ -z "$YT_REFRESH_TOKEN" ]; then
-            echo "Paid generation is stopped because YouTube upload was requested but upload credentials are missing." >&2
-            exit 1
+            echo "YouTube upload credentials not found; bypassing upload (render-only mode)."
           fi
 
       - name: Explain scheduled render-only mode

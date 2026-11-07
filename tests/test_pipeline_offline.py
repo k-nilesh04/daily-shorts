@@ -53,7 +53,10 @@ class OfflinePipeline(unittest.TestCase):
                      "-vf", f"crop=1:1:{x}:{y},format=rgb24", "-f", "rawvideo", "-"],
                     capture_output=True, check=True).stdout
 
-            self.assertEqual(pixel(10, 10), b"\x00\x00\x00")
+            if cfg.layout == "frame":
+                self.assertEqual(pixel(10, 10), b"\x00\x00\x00")
+            else:
+                self.assertNotEqual(pixel(10, 10), b"\x00\x00\x00")
             self.assertNotEqual(pixel(540, 960), b"\x00\x00\x00")
 
 class RenderDesignTests(unittest.TestCase):

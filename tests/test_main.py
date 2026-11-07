@@ -26,13 +26,17 @@ class MainPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "maximum allowed.*60s"):
             _validate_narration_duration(60.1, 60)
 
-    @patch("src.main.script_gen.generate")
+    @patch("src.main.youtube.upload")
+    @patch("src.main.render.build")
+    @patch("src.main.video_gen.generate_scenes")
+    @patch("src.main.tts.synthesize", return_value=(45.0, []))
+    @patch("src.main.script_gen.generate", return_value={"script": "story", "scene_prompts": ["p1", "p2", "p3"]})
     @patch("src.main.argparse.ArgumentParser.parse_args", return_value=SimpleNamespace(upload=False))
-    @patch("src.main.config.load", return_value=Config(upload=True))
-    def test_upload_without_credentials_stops_before_generation(
-            self, _load_config, _parse_args, generate_script):
-        self.assertEqual(main(), 1)
-        generate_script.assert_not_called()
+    @patch("src.main.config.load", return_value=Config(upload=True, target_seconds=45, dry_run=True))
+    def test_upload_without_credentials_bypasses_upload(
+            self, _load_config, _parse_args, _script, _tts, _video, _render, upload_mock):
+        self.assertEqual(main(), 0)
+        upload_mock.assert_not_called()
 
 
 if __name__ == "__main__":
