@@ -56,6 +56,7 @@ class Config:
 
     # behaviour
     upload: bool = field(default_factory=lambda: _bool("UPLOAD", False))
+    dry_run: bool = field(default_factory=lambda: _bool("DRY_RUN", False))
     privacy_status: str = field(default_factory=lambda: _env("PRIVACY_STATUS", "private"))
     ai_video_key: str = field(default_factory=lambda: _env("OMNI_API_KEY", _env("GEMINI_API_KEY")))
     ai_video_max_usd: float = field(default_factory=lambda: float(_env("AI_VIDEO_MAX_USD", "3.25")))

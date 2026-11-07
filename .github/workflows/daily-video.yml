@@ -19,12 +19,15 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      UPLOAD: ${{ (github.event_name == 'schedule' || inputs.upload == true) && secrets.YT_CLIENT_ID != '' && secrets.YT_CLIENT_SECRET != '' && secrets.YT_REFRESH_TOKEN != '' }}
+      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.upload != true) || (github.event_name == 'schedule' && (secrets.YT_CLIENT_ID == '' || secrets.YT_CLIENT_SECRET == '' || secrets.YT_REFRESH_TOKEN == '')) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -40,7 +43,7 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Check upload credentials before paid generation
-        if: github.event_name == 'schedule' || inputs.upload == true
+        if: github.event_name == 'workflow_dispatch' && inputs.upload == true
         env:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
@@ -51,9 +54,14 @@ jobs:
             exit 1
           fi
 
+      - name: Explain scheduled render-only mode
+        if: github.event_name == 'schedule' && env.DRY_RUN == 'true'
+        run: echo "YouTube upload credentials are incomplete; this scheduled run will render placeholders without paid video generation."
+
       - name: Generate video
         env:
-          UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == true }}
+          UPLOAD: ${{ env.UPLOAD }}
+          DRY_RUN: ${{ env.DRY_RUN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
@@ -70,7 +78,7 @@ jobs:
 
       - name: Save video + metadata
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: video-${{ github.run_number }}
           path: |

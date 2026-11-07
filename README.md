@@ -23,14 +23,22 @@ about **$4.20**.
 exceeds that limit, so the default supports up to 45 seconds. This is an application-side estimate,
 **not a provider-enforced billing cap**; actual charges can differ. Set a Google Cloud billing budget
 alert (for example, $100/month) and review actual usage. At one 45-second generation per day,
-expected video-generation cost is about **$94.50 per 30 days**. Manual test runs also incur
-generation charges even when YouTube upload is disabled. Generation is sequential with bounded
+expected video-generation cost is about **$94.50 per 30 days**. Local runs use paid video generation by default unless `DRY_RUN=true`; Actions render-only runs
+automatically use dry-run mode. Generation is sequential with bounded
 backoff retries for HTTP 429; repeated 429 errors can still mean the project's model quota, usage
 tier, or billing limit needs attention. Check the project's active limits in
 [AI Studio](https://aistudio.google.com/rate-limit).
-When Google provides a retry delay, the generator honors it (or uses bounded exponential
-backoff when no delay is included). A quota or billing block must be resolved in the Google
-project; waiting and retrying cannot increase the available quota.
+Provider retry delays and exponential backoff are capped at 120 seconds per retry. A quota or
+billing block must be resolved in the Google project; waiting and retrying cannot increase the
+available quota.
+Video-generation requests use bounded retries and polling, with a 25-minute maximum total wait
+across all scenes. The Actions job is limited to 40 minutes.
+
+Set `DRY_RUN=true` to skip paid Omni video generation and render locally generated test-pattern
+clips instead. Script creation still uses `GEMINI_API_KEY`; dry-run only avoids the paid video
+generation calls. The Actions workflow enables dry-run for manual runs with `upload = false` and
+for scheduled runs until all YouTube upload secrets are configured. Once scheduled upload
+credentials are present, scheduled runs use paid video generation and upload as before.
 
 ## Setup
 
@@ -48,14 +56,16 @@ for both script generation and Omni video generation.
 2. The default `AI_VIDEO_MAX_USD=3.25` is set in code. To override it, add a repository Actions
    variable named `AI_VIDEO_MAX_USD` only after reviewing the current pricing.
 3. Open **Actions → Daily Video → Run workflow**, select `main`, and keep `upload = false` for a
-   render-only test. This still calls the paid video-generation API.
+   render-only dry run. It produces a test-pattern video without paid Omni video calls. Set
+   `DRY_RUN=false` locally only when you intend to use paid video generation.
 4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
 
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
 The pipeline caps script length and stops before paid video generation if the synthesized
 narration exceeds the selected duration by more than two seconds (never allowing more than
 60 seconds total). Minor TTS timing variation is allowed; the renderer loops the final scene
-to cover a small overrun.
+to cover a small overrun. In particular, a 45-second target allows TTS output through 47 seconds.
+Longer narration stops with a clear error before paid video generation.
 Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
 `GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
 $3.25 estimated-cost limit; increase that variable only if you approve the higher spend.
@@ -68,8 +78,10 @@ $3.25 estimated-cost limit; increase that variable only if you approve the highe
 4. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository Actions secrets.
 5. Test using **Run workflow** with `upload = true`. Uploads are private by default.
 
-Scheduled runs upload automatically once the YouTube secrets are configured. Scheduled runs and
-manual runs requesting an upload stop before paid generation when YouTube secrets are missing.
+Scheduled runs upload automatically once all three YouTube secrets are configured. Until then,
+scheduled runs produce a dry-run artifact rather than failing on missing upload credentials or
+making paid video-generation calls. Manual runs requesting upload stop before paid generation
+when YouTube secrets are missing.
 Review generated videos and verify facts before publishing them publicly.
 
 ## Local development

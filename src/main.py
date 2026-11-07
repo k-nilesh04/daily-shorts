@@ -55,6 +55,7 @@ def main() -> int:
         "model": video_gen.MODEL,
         "resolution": video_gen.RESOLUTION,
         "scene_count": len(meta["scene_prompts"]),
+        "dry_run": cfg.dry_run,
         "estimated_video_cost_usd": round(
             video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2),
     }
