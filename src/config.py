@@ -37,7 +37,6 @@ class Config:
 
     # keys
     gemini_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
-    pexels_key: str = field(default_factory=lambda: _env("PEXELS_API_KEY"))
     yt_client_id: str = field(default_factory=lambda: _env("YT_CLIENT_ID"))
     yt_client_secret: str = field(default_factory=lambda: _env("YT_CLIENT_SECRET"))
     yt_refresh_token: str = field(default_factory=lambda: _env("YT_REFRESH_TOKEN"))

@@ -33,10 +33,14 @@ def main() -> int:
     hook = omni.get_hook(cfg, meta["hook_prompt"], cfg.work_dir)
     need = render.segments_needed(cfg, duration, hook is not None)
     clips = footage.fetch(cfg, meta["keywords"], need, cfg.work_dir / "clips")
+    meta["footage_credits"] = list({
+        clip.path: clip.credit() for clip in clips
+    }.values())
 
     # 4. render
     video = cfg.output_dir / "video.mp4"
-    render.build(cfg, clips, hook, voice, duration, words, video, cfg.work_dir / "render")
+    render.build(cfg, [clip.path for clip in clips], hook, voice, duration, words,
+                 video, cfg.work_dir / "render")
     (cfg.output_dir / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
