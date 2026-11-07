@@ -67,6 +67,38 @@ def _even_timings(text: str, duration: float) -> list[dict]:
 
 
 @retry(times=3, delay=5)
+def trim_audio(path: Path, target_seconds: float) -> None:
+    """Trim an audio file in place to at most ``target_seconds``."""
+    tmp = path.with_name(path.stem + ".trimmed" + path.suffix)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(path),
+             "-t", f"{target_seconds:.3f}", "-c:a", "libmp3lame", "-q:a", "4",
+             str(tmp)],
+            capture_output=True, text=True, check=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "ffmpeg was not found; install FFmpeg and add it to PATH "
+            "(https://ffmpeg.org/download.html)") from error
+    except subprocess.CalledProcessError as error:
+        details = (error.stderr or "").strip()
+        raise RuntimeError(
+            f"Could not trim audio {path.name}: "
+            f"{details or 'FFmpeg returned a non-zero exit code'}") from error
+    if not tmp.is_file() or tmp.stat().st_size == 0:
+        raise RuntimeError(f"ffmpeg produced no trimmed audio for {path.name}")
+    tmp.replace(path)
+
+
+def trim_words(words: list[dict], target_seconds: float) -> list[dict]:
+    """Keep only words that end at or before ``target_seconds``."""
+    kept = [w for w in words if float(w.get("end", 0)) <= target_seconds + 0.05]
+    if kept and float(kept[-1].get("end", 0)) > target_seconds:
+        kept[-1]["end"] = target_seconds
+    return kept
+
+
 def synthesize(cfg: Config, text: str, out: Path) -> tuple[float, list[dict]]:
     words = asyncio.run(_synth(text, cfg.tts_voice, cfg.tts_rate, out))
     if not out.is_file() or out.stat().st_size == 0:

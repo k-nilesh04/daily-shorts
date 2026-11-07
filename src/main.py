@@ -120,7 +120,25 @@ def main() -> int:
                         break
                     except RuntimeError:
                         pass
-                raise
+                # Final resort: trim the audio and captions to TARGET_SECONDS so
+                # the run completes instead of aborting on an overlong narration.
+                log.warning(
+                    "Trimming narration audio to %.1fs to keep the video at or "
+                    "below %d seconds.", cfg.target_seconds, cfg.target_seconds)
+                tts.trim_audio(voice, cfg.target_seconds)
+                duration = tts.probe_duration(voice)
+                words = tts.trim_words(words, cfg.target_seconds)
+                meta["script"] = " ".join(w.get("text", "") for w in words)
+                last_duration = duration
+                try:
+                    _validate_narration_duration(duration, cfg.target_seconds)
+                    break
+                except RuntimeError:
+                    pass
+                raise RuntimeError(
+                    f"Narration is {last_duration:.1f}s; could not trim to "
+                    f"{cfg.target_seconds}s. Lower TARGET_SECONDS or shorten the script."
+                )
             # Aggressive correction: target ~85% of the measured words so the
             # next narration lands comfortably under the limit.
             if duration > cfg.target_seconds:
