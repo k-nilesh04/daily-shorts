@@ -15,14 +15,21 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
 
 
 def _normalize(cfg: Config, src: Path, dst: Path, seconds: float) -> None:
-    """Crop each source to a square shot, with a slow push-in and exact length."""
-    size = cfg.frame_size
-    overscan = int(size * 1.08)
-    vf = (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
-          f"crop={overscan}:{overscan},"
-          f"zoompan=z='min(zoom+0.00035,1.08)':"
-          f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-          f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
+    """Scale and crop each source clip to exact length and resolution."""
+    layout = getattr(cfg, "layout", "fullscreen")
+    if layout == "frame":
+        size = cfg.frame_size
+        overscan = int(size * 1.08)
+        vf = (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
+              f"crop={overscan}:{overscan},"
+              f"zoompan=z='min(zoom+0.00035,1.08)':"
+              f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+              f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
+    else:
+        # Fullscreen 9:16 vertical video (1080x1920)
+        vf = (f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
+              f"crop={cfg.width}:{cfg.height},"
+              f"setsar=1,format=yuv420p")
     run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(src),
          "-t", f"{seconds:.3f}", "-vf", vf, "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", str(dst)])
@@ -96,13 +103,24 @@ def build(cfg: Config, clips: list[Path], voice: Path,
 
     write_ass(cfg, words, work / "captions.ass")
     out.parent.mkdir(parents=True, exist_ok=True)
-    run(["ffmpeg", "-y", "-loglevel", "error",
-         "-f", "lavfi", "-i", f"color=c=black:s={cfg.width}x{cfg.height}:r={cfg.fps}:d={duration:.3f}",
-         "-i", "visual.mp4", "-i", str(voice.resolve()),
-         "-filter_complex", _presentation_filter(cfg, duration),
-         "-map", "[vout]", "-map", "2:a",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
-         str(out.resolve())], cwd=work)
+    layout = getattr(cfg, "layout", "fullscreen")
+    if layout == "frame":
+        run(["ffmpeg", "-y", "-loglevel", "error",
+             "-f", "lavfi", "-i", f"color=c=black:s={cfg.width}x{cfg.height}:r={cfg.fps}:d={duration:.3f}",
+             "-i", "visual.mp4", "-i", str(voice.resolve()),
+             "-filter_complex", _presentation_filter(cfg, duration),
+             "-map", "[vout]", "-map", "2:a",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
+             str(out.resolve())], cwd=work)
+    else:
+        # Fullscreen 9:16 layout with burned-in animated subtitles
+        run(["ffmpeg", "-y", "-loglevel", "error",
+             "-i", "visual.mp4", "-i", str(voice.resolve()),
+             "-vf", "ass=captions.ass",
+             "-map", "0:v", "-map", "1:a",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+             "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
+             str(out.resolve())], cwd=work)
     log.info("Rendered %s (%.1f MB)", out.name, out.stat().st_size / 1e6)
     return out

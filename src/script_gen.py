@@ -26,42 +26,39 @@ def _prompt(cfg: Config, avoid: list[str], correction: str = "") -> str:
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
     scene_count = math.ceil(cfg.target_seconds / 15)
     language_rule = (
-        "Use natural spoken Hinglish in Latin letters; do not use Devanagari."
+        "Use natural, witty, funny spoken Hinglish in Latin letters; do not use Devanagari. Use energetic comedic expressions and playful delivery."
         if cfg.language.lower() == "hinglish"
-        else f"Write naturally in {cfg.language}."
+        else f"Write naturally and humorously in {cfg.language}."
     )
-    return f"""You write scripts for a faceless YouTube Shorts channel.
+    return f"""You are a master comedy and storytelling creator for viral YouTube Shorts (style: cute 3D Pixar/Disney animated character comedy like talking cute babies, clumsy mischievous cats, and funny pet adventures).
 Niche: {cfg.niche}
 Language of narration/title/description: {cfg.language}
 
-Write ONE new short video. Rules:
+Write ONE hilarious, heartwarming, entertaining short story video. Rules:
 - Narration: about {words} words, and never more than {max_words} whitespace-separated words.
   Keep the spoken story concise enough to fit within {cfg.target_seconds} seconds.
 - {language_rule}
-- First sentence is a strong hook (a surprising claim or question). No greetings, no "welcome".
-- Keep the story vivid and fast, not like an encyclopedia entry: use conversational phrasing,
-  concrete imagery, varied sentence lengths, and an escalating reveal.
-- Give the viewer a reason to stay: open a curiosity gap, answer it with a clear explanation,
-  and finish with one memorable takeaway.
-- Only include facts you are confident are true. No invented statistics, quotes or names.
-- End with a short closing line that makes people want to follow or comment.
-- Plain sentences only: no emojis, hashtags, stage directions or markdown in "script".
+- Concept: A funny character (e.g. a cute chubby baby with hilarious adult plans, a mischievous cat causing comedy chaos in a clinic or kitchen, or a dramatic playful pet).
+- Hook: The very first sentence is an instant comedic hook (e.g. an unexpected funny situation or question). No boring greetings like 'hello' or 'welcome'.
+- Escalation & Pacing: Keep the story super lively and fast-paced. Show the character trying something ambitious, failing in a funny cute way, and creating escalating comedic chaos.
+- Punchline: Deliver a hilarious or cute twist ending that leaves viewers smiling.
+- Call to action: End with a funny short closing line asking viewers to like, comment, and subscribe.
+- Narration script format: Plain sentences only: no emojis, hashtags, stage directions or markdown in "script" (audio TTS reads plain text).
 - Do NOT repeat any of these past topics:
 {avoid_txt}
 - Create exactly {scene_count} visually distinct, chronological scene prompts for AI video generation.
-- Each scene prompt must describe one 15-second, vertical 9:16 cinematic documentary shot that
-  directly illustrates this story. Use specific era-appropriate objects, locations, and action.
-- Scene prompts must be in English, must not add facts absent from the narration, and must request
-  no speech, no captions, no writing, no logos, and no watermarks. The pipeline adds narration/captions.
+- Each scene prompt must describe one 15-second, vertical 9:16 high-end 3D Pixar/Disney style animated CGI cartoon shot that directly illustrates this moment in the story.
+- In each scene prompt, describe the character with cute expressive features (e.g. big glossy cartoon eyes, chubby cheeks, funny exaggerated facial expressions, playful slapstick body language), vibrant saturated colors, Pixar-level soft lighting, and a detailed animated environment.
+- Scene prompts must be in English and must request no speech, no text, no subtitles, no logos, and no watermarks.
 {correction}
 
 Return ONLY a JSON object with exactly these keys:
 {{
   "topic": "3-8 word topic label (in English)",
-  "title": "catchy YouTube title, max 80 chars, in {cfg.language}",
+  "title": "catchy funny YouTube title with cute/funny vibes, max 80 chars, in {cfg.language}",
   "script": "the full narration text",
-  "description": "2-3 sentence description in {cfg.language}",
-  "tags": ["8-12 short tags"],
+  "description": "2-3 sentence funny description with comedy hashtags in {cfg.language}",
+  "tags": ["8-12 short tags including funny, animation, comedy, cute, shorts"],
   "keywords": ["6 ENGLISH visual concepts from the story, in story order"],
   "scene_prompts": ["English prompt for scene 1", "English prompt for scene 2"]
 }}"""

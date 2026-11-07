@@ -1,4 +1,4 @@
-"""Build animated ASS captions and the minimal HUD for the square-frame layout."""
+"""Build animated ASS captions and the minimal HUD for the square-frame or fullscreen layout."""
 import re
 from pathlib import Path
 
@@ -14,7 +14,7 @@ YCbCr Matrix: TV.601
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font},{size},&H00FFD700,&H00FFFFFF,&H00101010,&H00000000,-1,0,0,0,100,100,0,0,1,4,2,2,72,72,{margin_v},1
+Style: Default,{font},{size},&H0000FFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,5,3,2,72,72,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -63,19 +63,32 @@ def write_ass(cfg: Config, words: list[dict], path: Path) -> Path:
     end = _ts(max((word["end"] for word in words), default=0) + 1)
     frame_x, frame_y, frame_size = cfg.frame_x, cfg.frame_y, cfg.frame_size
     center_x = cfg.width // 2
-    caption_y = frame_y + frame_size + max(80, (cfg.height - frame_y - frame_size) // 3)
-    title_y = max(80, frame_y // 2)
 
-    lines.append(
-        f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
-        f"{{\\an8\\pos({center_x},{title_y})\\fn{cfg.caption_font}\\fs28\\bord0\\shad0"
-        f"\\fsp7\\c&H00FFD700&}}FIELD NOTES  /  DAILY DISCOVERY\n"
-    )
-    lines.append(
-        f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
-        f"{{\\an8\\pos({center_x},{title_y + 42})\\fn{cfg.caption_font}\\fs18\\bord0\\shad0"
-        f"\\fsp4\\c&H00909090&}}SCIENCE  /  HISTORY  /  THE UNEXPECTED\n"
-    )
+    layout = getattr(cfg, "layout", "fullscreen")
+    if layout == "frame":
+        caption_y = frame_y + frame_size + max(80, (cfg.height - frame_y - frame_size) // 3)
+        title_y = max(80, frame_y // 2)
+        if getattr(cfg, "header_title", ""):
+            lines.append(
+                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
+                f"{{\\an8\\pos({center_x},{title_y})\\fn{cfg.caption_font}\\fs28\\bord0\\shad0"
+                f"\\fsp7\\c&H00FFD700&}}{cfg.header_title}\n"
+            )
+        if getattr(cfg, "header_subtitle", ""):
+            lines.append(
+                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
+                f"{{\\an8\\pos({center_x},{title_y + 42})\\fn{cfg.caption_font}\\fs18\\bord0\\shad0"
+                f"\\fsp4\\c&H00909090&}}{cfg.header_subtitle}\n"
+            )
+    else:
+        # Fullscreen 9:16 vertical layout (optimal position above shorts interface)
+        caption_y = cfg.height - 480
+        if getattr(cfg, "header_title", ""):
+            lines.append(
+                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
+                f"{{\\an8\\pos({center_x},100)\\fn{cfg.caption_font}\\fs26\\bord2\\shad1"
+                f"\\fsp4\\c&H0000FFFF&}}{cfg.header_title}\n"
+            )
 
     for g in group_words(words):
         syllables = []

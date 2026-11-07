@@ -20,7 +20,7 @@ def _env(name: str, default: str = "") -> str:
 class Config:
     # content
     niche: str = field(default_factory=lambda: _env(
-        "NICHE", "Hindi short storytelling about surprising science and history"))
+        "NICHE", "Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations"))
     language: str = field(default_factory=lambda: _env("LANGUAGE", "Hinglish"))
     tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "hi-IN-MadhurNeural"))
     tts_rate: str = field(default_factory=lambda: _env("TTS_RATE", "+0%"))
@@ -31,10 +31,14 @@ class Config:
     width: int = 1080
     height: int = 1920
     fps: int = 30
+    layout: str = field(default_factory=lambda: _env("LAYOUT", "fullscreen"))  # 'fullscreen' or 'frame'
     caption_font: str = field(default_factory=lambda: _env("CAPTION_FONT", "DejaVu Sans"))
     caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "78")))
     caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", False))
     segment_seconds: float = field(default_factory=lambda: float(_env("SEGMENT_SECONDS", "4.5")))
+    header_title: str = field(default_factory=lambda: _env("HEADER_TITLE", "COMEDY SHORTS  /  FUNNY TOONS"))
+    header_subtitle: str = field(default_factory=lambda: _env("HEADER_SUBTITLE", "3D ANIMATION  /  ENTERTAINING  /  FUNNY"))
+    yt_category_id: str = field(default_factory=lambda: _env("YT_CATEGORY_ID", "23"))
 
     @property
     def frame_size(self) -> int:

@@ -76,9 +76,9 @@ def _generate_one(
                 interaction = client.interactions.create(
                     model=MODEL,
                     input=(
-                        f"Create one 15-second cinematic documentary video, portrait orientation. "
+                        f"Create one 15-second cinematic 3D Pixar Disney style animated video, portrait orientation. "
                         f"Visual brief: {prompt.strip()} "
-                        "Make the action visually engaging and suitable for a Hindi/Hinglish story. "
+                        "Features cute expressive cartoon characters, fluid animation, vibrant saturated colors, and comedic charm. "
                         "Generate silent video with no dialogue, narration, text, subtitles, logos, or watermark."
                     ),
                     response_format={

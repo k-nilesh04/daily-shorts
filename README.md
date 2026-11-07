@@ -1,16 +1,15 @@
 # daily-shorts
 
-Automated 30–60 second Hindi/Hinglish YouTube storytelling videos, rendered on GitHub Actions.
+Automated 30–60 second 3D AI animated comedy & storytelling YouTube Shorts, rendered locally or on GitHub Actions.
 
 ```
-Gemini (story + scene prompts) → edge-tts (Hinglish narration + word timings)
-  → Gemini Omni Flash (matching 15-second AI video scenes, generated sequentially)
-  → FFmpeg (centered square video, black vertical canvas, motion graphics + captions)
-  → optional private YouTube upload → topic history
+Gemini (comedy story + 3D Pixar-style scene prompts) → edge-tts (Hinglish narration + word timings)
+  → Gemini Omni Flash (matching 15-second 3D cartoon video scenes, generated sequentially)
+  → FFmpeg (fullscreen 9:16 vertical video + animated karaoke subtitles)
+  → optional YouTube upload (Comedy category) → topic history
 ```
 
-Default niche: *surprising science and history facts*. The final video is 1080×1920, with AI-generated
-portrait footage cropped into the centered square design.
+Default niche: *Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations*. The final video is full 1080×1920 vertical format with viral popping captions.
 
 ## Important: video-generation charges
 

@@ -74,6 +74,9 @@ jobs:
           PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
+          LAYOUT: ${{ vars.LAYOUT }}
+          HEADER_TITLE: ${{ vars.HEADER_TITLE }}
+          YT_CATEGORY_ID: ${{ vars.YT_CATEGORY_ID }}
         run: python -m src.main
 
       - name: Save video + metadata

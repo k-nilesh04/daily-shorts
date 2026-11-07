@@ -26,13 +26,19 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     description = meta["description"]
-    description += "\n\n#Shorts"
+    description += "\n\n#Shorts #Funny #Animation #Comedy #Viral"
+    tags = list(meta.get("tags", []))
+    for t in ["Shorts", "funny", "comedy", "animation", "3danimation", "cartoon"]:
+        if t not in tags:
+            tags.append(t)
+
+    category_id = getattr(cfg, "yt_category_id", "23")  # 23 = Comedy
     body = {
         "snippet": {
             "title": meta["title"][:100],
             "description": description,
-            "tags": meta["tags"],
-            "categoryId": "27",  # Education. Change if your niche differs.
+            "tags": tags[:20],
+            "categoryId": category_id,
         },
         "status": {
             "privacyStatus": cfg.privacy_status,
