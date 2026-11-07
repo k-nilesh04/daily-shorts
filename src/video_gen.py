@@ -1,6 +1,7 @@
 """Generate story-matched video scenes with Gemini Omni Flash."""
 import base64
 import math
+import re
 import time
 from pathlib import Path
 
@@ -16,6 +17,35 @@ ESTIMATED_USD_PER_SECOND_720P = 0.07
 RESOLUTION = "720p"
 MAX_RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_RETRY_DELAY_SECONDS = 30
+
+
+def _retry_after_seconds(error: errors.APIError) -> float | None:
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {})
+    retry_after = headers.get("Retry-After") if headers else None
+    if retry_after:
+        try:
+            delay = float(retry_after)
+            if math.isfinite(delay):
+                return max(0.0, delay)
+        except (TypeError, ValueError):
+            pass
+
+    details = getattr(error, "details", None)
+    error_details = details.get("error", {}) if isinstance(details, dict) else {}
+    if not isinstance(error_details, dict):
+        return None
+    for detail in error_details.get("details", []):
+        if not isinstance(detail, dict):
+            continue
+        if detail.get("@type", "").endswith("google.rpc.RetryInfo"):
+            retry_delay = detail.get("retryDelay")
+            if not isinstance(retry_delay, str):
+                continue
+            match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)s\s*", retry_delay)
+            if match:
+                return float(match.group(1))
+    return None
 
 
 def estimate_cost_usd(scene_count: int) -> float:
@@ -52,12 +82,16 @@ def _generate_one(cfg: Config, prompt: str, dest: Path, scene_number: int) -> Pa
                 if attempt == MAX_RATE_LIMIT_RETRIES:
                     raise RuntimeError(
                         f"Gemini video generation for scene {scene_number} was rate-limited "
-                        f"after {attempt + 1} attempts (HTTP 429). Check the project's Gemini "
+                        f"after {attempt + 1} attempts (HTTP 429: {error.message}). "
+                        "Check the project's Gemini "
                         "Omni rate limits, usage tier, and billing in AI Studio."
                     ) from error
                 wait = RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** attempt)
+                retry_after = _retry_after_seconds(error)
+                if retry_after is not None:
+                    wait = max(wait, retry_after)
                 log.warning(
-                    "Scene %d rate-limited by Gemini (HTTP 429). Retry %d/%d in %ds",
+                    "Scene %d rate-limited by Gemini (HTTP 429). Retry %d/%d in %.1fs",
                     scene_number, attempt + 1, MAX_RATE_LIMIT_RETRIES, wait,
                 )
                 time.sleep(wait)

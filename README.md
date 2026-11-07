@@ -28,6 +28,9 @@ generation charges even when YouTube upload is disabled. Generation is sequentia
 backoff retries for HTTP 429; repeated 429 errors can still mean the project's model quota, usage
 tier, or billing limit needs attention. Check the project's active limits in
 [AI Studio](https://aistudio.google.com/rate-limit).
+When Google provides a retry delay, the generator honors it (or uses bounded exponential
+backoff when no delay is included). A quota or billing block must be resolved in the Google
+project; waiting and retrying cannot increase the available quota.
 
 ## Setup
 

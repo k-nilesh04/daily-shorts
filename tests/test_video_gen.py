@@ -67,6 +67,32 @@ class VideoGenerationTests(unittest.TestCase):
 
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
+    def test_honors_provider_retry_delay(self, client_factory, sleep):
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        client = client_factory.return_value
+        rate_limited = errors.ClientError(
+            429,
+            {"error": {
+                "message": "rate exceeded",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [{
+                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                    "retryDelay": "45s",
+                }],
+            }},
+        )
+        payload = base64.b64encode(b"fake mp4 data").decode("ascii")
+        response = SimpleNamespace(output_video=SimpleNamespace(data=payload))
+        client.interactions.create.side_effect = [rate_limited, response, response]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
+
+        self.assertEqual(len(paths), 2)
+        sleep.assert_called_once_with(45.0)
+
+    @patch("src.video_gen.time.sleep")
+    @patch("src.video_gen.genai.Client")
     def test_reports_persistent_rate_limit_actionably(self, client_factory, sleep):
         cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
         client = client_factory.return_value
@@ -74,7 +100,10 @@ class VideoGenerationTests(unittest.TestCase):
             429, {"error": {"message": "rate exceeded", "status": "RESOURCE_EXHAUSTED"}})
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with self.assertRaisesRegex(RuntimeError, "Check the project's Gemini Omni rate limits"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "HTTP 429: rate exceeded.*Check the project's Gemini Omni rate limits",
+            ):
                 generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
 
         self.assertEqual(client.interactions.create.call_count, 4)
