@@ -14,7 +14,13 @@ REQUIRED = {
 }
 
 
-def _prompt(cfg: Config, avoid: list[str]) -> str:
+class ScriptLengthError(ValueError):
+    def __init__(self, actual_words: int, max_words: int) -> None:
+        self.actual_words = actual_words
+        super().__init__(f"script has {actual_words} words; maximum is {max_words}")
+
+
+def _prompt(cfg: Config, avoid: list[str], correction: str = "") -> str:
     words = int(cfg.target_seconds * 1.5)
     max_words = int(cfg.target_seconds * 2)
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
@@ -47,6 +53,7 @@ Write ONE new short video. Rules:
   directly illustrates this story. Use specific era-appropriate objects, locations, and action.
 - Scene prompts must be in English, must not add facts absent from the narration, and must request
   no speech, no captions, no writing, no logos, and no watermarks. The pipeline adds narration/captions.
+{correction}
 
 Return ONLY a JSON object with exactly these keys:
 {{
@@ -76,32 +83,63 @@ def _parse(text: str, scene_count: int, max_words: int) -> dict:
         raise ValueError(f"scene_prompts must contain exactly {scene_count} non-empty prompts")
     data["title"] = str(data["title"]).strip()[:95]
     data["script"] = " ".join(str(data["script"]).split())
-    if len(data["script"].split()) > max_words:
-        raise ValueError(f"script exceeds the maximum of {max_words} words")
+    actual_words = len(data["script"].split())
+    if actual_words > max_words:
+        raise ScriptLengthError(actual_words, max_words)
     data["tags"] = [str(t).strip().lstrip("#") for t in data["tags"]][:12]
     return data
 
 
 @retry(times=3, delay=6)
-def generate(cfg: Config, avoid: list[str]) -> dict:
+def _request(cfg: Config, prompt: str):
     if not cfg.gemini_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
     client = genai.Client(
         api_key=cfg.gemini_key,
         http_options=types.HttpOptions(api_version="v1beta"),
     )
-    resp = client.models.generate_content(
-        model=cfg.gemini_model,
-        contents=_prompt(cfg, avoid),
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.9,
-        ),
-    )
-    data = _parse(
-        resp.text,
-        math.ceil(cfg.target_seconds / 15),
-        int(cfg.target_seconds * 2),
-    )
-    log.info("Script ready: %s (%d words)", data["title"], len(data["script"].split()))
-    return data
+    try:
+        return client.models.generate_content(
+            model=cfg.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.9,
+            ),
+        )
+    finally:
+        client.close()
+
+
+def generate(cfg: Config, avoid: list[str]) -> dict:
+    if not cfg.gemini_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+
+    scene_count = math.ceil(cfg.target_seconds / 15)
+    max_words = int(cfg.target_seconds * 2)
+    prompt = _prompt(cfg, avoid)
+    for attempt in range(3):
+        resp = _request(cfg, prompt)
+        try:
+            data = _parse(resp.text, scene_count, max_words)
+        except ScriptLengthError as error:
+            if attempt == 2:
+                raise
+            log.warning(
+                "Gemini script has %d words (limit %d). Requesting a shorter rewrite (%d/2)",
+                error.actual_words, max_words, attempt + 1,
+            )
+            prompt = _prompt(
+                cfg,
+                avoid,
+                correction=(
+                    f"IMPORTANT: Your previous narration was {error.actual_words} words, exceeding "
+                    f"the hard limit of {max_words}. Rewrite the complete story much shorter. "
+                    f"Keep the script at or below {max_words} whitespace-separated words; "
+                    "count the words before returning the JSON."
+                ),
+            )
+            continue
+
+        log.info("Script ready: %s (%d words)", data["title"], len(data["script"].split()))
+        return data
