@@ -20,8 +20,21 @@ class ScriptLengthError(ValueError):
         super().__init__(f"script has {actual_words} words; maximum is {max_words}")
 
 
+def _trim_to_word_limit(script: str, max_words: int) -> str:
+    """Trim a script to fit within max_words, preserving complete sentences if possible."""
+    words = script.split()
+    if len(words) <= max_words:
+        return script
+    truncated = " ".join(words[:max_words])
+    match = re.search(r"^(.*[.!?])\s+[^.!?]*$", truncated)
+    if match and len(match.group(1).split()) >= int(max_words * 0.7):
+        return match.group(1)
+    return truncated.rstrip(",;:- ") + "."
+
+
 def _prompt(cfg: Config, avoid: list[str], correction: str = "") -> str:
-    words = int(cfg.target_seconds * 1.5)
+    target_words = int(cfg.target_seconds * 1.3)
+    min_words = int(cfg.target_seconds * 1.0)
     max_words = int(cfg.target_seconds * 2)
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
     scene_count = math.ceil(cfg.target_seconds / 15)
@@ -34,9 +47,15 @@ def _prompt(cfg: Config, avoid: list[str], correction: str = "") -> str:
 Niche: {cfg.niche}
 Language of narration/title/description: {cfg.language}
 
-Write ONE hilarious, heartwarming, entertaining short story video. Rules:
-- Narration: about {words} words, and never more than {max_words} whitespace-separated words.
-  Keep the spoken story concise enough to fit within {cfg.target_seconds} seconds.
+Write ONE hilarious, heartwarming, entertaining short story video.
+
+CRITICAL LENGTH CONSTRAINTS (STRICT):
+- Narration script length: MUST be concise, strictly between {min_words} and {target_words} words total.
+- ABSOLUTE HARD CEILING: NEVER exceed {max_words} whitespace-separated words. Scripts over {max_words} words will be REJECTED.
+- Keep sentences short, punchy, and comedic so it speaks comfortably within {cfg.target_seconds} seconds.
+- Count every word in "script" before returning and verify len(script.split()) <= {max_words}.
+
+Story Rules:
 - {language_rule}
 - Concept: A funny character (e.g. a cute chubby baby with hilarious adult plans, a mischievous cat causing comedy chaos in a clinic or kitchen, or a dramatic playful pet).
 - Hook: The very first sentence is an instant comedic hook (e.g. an unexpected funny situation or question). No boring greetings like 'hello' or 'welcome'.
@@ -121,7 +140,20 @@ def generate(cfg: Config, avoid: list[str]) -> dict:
             data = _parse(resp.text, scene_count, max_words)
         except ScriptLengthError as error:
             if attempt == 2:
-                raise
+                # Fallback: Auto-trim script to max_words to ensure the pipeline succeeds without error
+                log.warning(
+                    "Gemini script has %d words (limit %d) after 3 attempts. Auto-trimming to %d words.",
+                    error.actual_words, max_words, max_words,
+                )
+                try:
+                    raw_text = re.sub(r"^```(?:json)?|```$", "", resp.text, flags=re.MULTILINE).strip()
+                    parsed = json.loads(raw_text)
+                    parsed["script"] = _trim_to_word_limit(parsed["script"], max_words)
+                    data = _parse(json.dumps(parsed), scene_count, max_words)
+                    log.info("Script auto-trimmed to %d words: %s", len(data["script"].split()), data["title"])
+                    return data
+                except Exception:
+                    raise error
             log.warning(
                 "Gemini script has %d words (limit %d). Requesting a shorter rewrite (%d/2)",
                 error.actual_words, max_words, attempt + 1,

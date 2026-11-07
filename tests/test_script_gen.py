@@ -78,5 +78,26 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertIn("hard limit of 90", correction_prompt)
 
 
+    @patch("src.script_gen.genai.Client")
+    def test_auto_trims_script_when_all_attempts_exceed_limit(self, client_factory):
+        response_data = {
+            "topic": "Ancient Roman Concrete",
+            "title": "Why Roman Concrete Lasts",
+            "script": " ".join(["story"] * 105),
+            "description": "A fact about Roman concrete.",
+            "tags": ["history"],
+            "keywords": ["roman concrete"],
+            "scene_prompts": ["scene one", "scene two", "scene three"],
+        }
+        client = client_factory.return_value
+        client.models.generate_content.return_value = SimpleNamespace(
+            text=json.dumps(response_data))
+
+        result = generate(Config(gemini_key="test-key"), [])
+
+        self.assertLessEqual(len(result["script"].split()), 90)
+        self.assertEqual(client.models.generate_content.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
