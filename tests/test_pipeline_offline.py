@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src import captions, config, render
 from src.tts import _even_timings, probe_duration
@@ -45,6 +46,11 @@ class OfflinePipeline(unittest.TestCase):
                  "stream=width,height", "-of", "csv=p=0", str(out)],
                 capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(info, "1080,1920")
+            rate = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                 "stream=r_frame_rate", "-of", "csv=p=0", str(out)],
+                capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(rate, "30/1")
             self.assertAlmostEqual(probe_duration(out), dur, delta=0.6)
 
             def pixel(x, y):
@@ -60,6 +66,17 @@ class OfflinePipeline(unittest.TestCase):
             self.assertNotEqual(pixel(540, 960), b"\x00\x00\x00")
 
 class RenderDesignTests(unittest.TestCase):
+    def test_fullscreen_normalizes_to_30_fps_and_1080x1920(self):
+        cfg = config.load()
+        filters = render._normalize_filter(cfg)
+        self.assertIn("scale=1080:1920", filters)
+        self.assertIn("fps=30", filters)
+
+    def test_run_reports_missing_ffmpeg(self):
+        with patch("src.render.subprocess.run", side_effect=FileNotFoundError()):
+            with self.assertRaisesRegex(RuntimeError, "ffmpeg was not found"):
+                render.run(["ffmpeg", "-version"])
+
     def test_square_frame_layout_and_motion_overlays(self):
         cfg = config.load()
         self.assertEqual(cfg.frame_size, 900)

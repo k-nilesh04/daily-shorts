@@ -55,10 +55,12 @@ class Config:
     # keys
     gemini_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
     json2video_key: str = field(default_factory=lambda: _env("JSON2VIDEO_API_KEY"))
-    video_provider: str = field(default_factory=lambda: _env("VIDEO_PROVIDER", "json2video" if _env("JSON2VIDEO_API_KEY") else "gemini"))
-    json2video_image_url: str = field(default_factory=lambda: _env(
-        "JSON2VIDEO_IMAGE_URL",
-        "https://cdn.json2video.com/assets/images/london-01.jpg"))
+    # Gemini is the default; JSON2Video must be chosen explicitly so that merely
+    # adding a JSON2VIDEO_API_KEY cannot silently switch the channel away from
+    # prompt-generated animation to a single still-image render.
+    video_provider: str = field(default_factory=lambda: _env("VIDEO_PROVIDER", "gemini"))
+    # No default image: a still-image render needs an explicit, on-brand image.
+    json2video_image_url: str = field(default_factory=lambda: _env("JSON2VIDEO_IMAGE_URL"))
     yt_client_id: str = field(default_factory=lambda: _env("YT_CLIENT_ID"))
     yt_client_secret: str = field(default_factory=lambda: _env("YT_CLIENT_SECRET"))
     yt_refresh_token: str = field(default_factory=lambda: _env("YT_REFRESH_TOKEN"))
@@ -80,6 +82,13 @@ class Config:
             raise ValueError("TARGET_SECONDS must be between 30 and 60")
         if self.video_provider not in {"gemini", "json2video"}:
             raise ValueError("VIDEO_PROVIDER must be 'gemini' or 'json2video'")
+        if self.layout not in {"fullscreen", "frame"}:
+            raise ValueError("LAYOUT must be 'fullscreen' or 'frame'")
+        if self.privacy_status not in {"private", "unlisted", "public"}:
+            raise ValueError(
+                "PRIVACY_STATUS must be 'private', 'unlisted', or 'public'")
+        if self.ai_video_max_usd < 0:
+            raise ValueError("AI_VIDEO_MAX_USD must be zero or greater")
 
     @property
     def can_upload(self) -> bool:

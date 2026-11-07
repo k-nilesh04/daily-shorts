@@ -72,12 +72,18 @@ jobs:
           NICHE: ${{ vars.NICHE }}
           LANGUAGE: ${{ vars.LANGUAGE }}
           TTS_VOICE: ${{ vars.TTS_VOICE }}
+          TTS_RATE: ${{ vars.TTS_RATE }}
           TARGET_SECONDS: ${{ vars.TARGET_SECONDS }}
           PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
           LAYOUT: ${{ vars.LAYOUT }}
+          SEGMENT_SECONDS: ${{ vars.SEGMENT_SECONDS }}
+          CAPTION_FONT: ${{ vars.CAPTION_FONT }}
+          CAPTION_SIZE: ${{ vars.CAPTION_SIZE }}
+          CAPTION_UPPER: ${{ vars.CAPTION_UPPER }}
           HEADER_TITLE: ${{ vars.HEADER_TITLE }}
+          HEADER_SUBTITLE: ${{ vars.HEADER_SUBTITLE }}
           YT_CATEGORY_ID: ${{ vars.YT_CATEGORY_ID }}
         run: python -m src.main
 

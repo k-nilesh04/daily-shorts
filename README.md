@@ -3,7 +3,7 @@
 Automated 30–60 second 3D AI animated comedy & storytelling YouTube Shorts, rendered locally or on GitHub Actions.
 
 ```
-Gemini (comedy story + 3D Pixar-style scene prompts) → edge-tts (Hinglish narration + word timings)
+Gemini (comedy story + polished 3D-cartoon scene prompts) → edge-tts (Hinglish narration + word timings)
   → Gemini Omni Flash (matching 15-second 3D cartoon video scenes, generated sequentially)
   → FFmpeg (fullscreen 9:16 vertical video + animated karaoke subtitles)
   → optional YouTube upload (Comedy category) → topic history
@@ -33,13 +33,13 @@ available quota.
 Video-generation requests use bounded retries and polling, with a 25-minute maximum total wait
 across all scenes. The Actions job is limited to 40 minutes.
 
-To render through JSON2Video instead, set `VIDEO_PROVIDER=json2video` and provide
-`JSON2VIDEO_API_KEY`. This uses JSON2Video's image-and-text movie API: it renders the
-configured still image with the generated title, then this project adds narration and captions.
-It does **not** turn the scene prompts into AI-generated animation. Set
-`JSON2VIDEO_IMAGE_URL` to a publicly accessible image URL; by default it uses the sample London
-image from the API example. JSON2Video plan quotas and credits apply; the Gemini cost estimate
-does not cover JSON2Video.
+To render through JSON2Video instead, set `VIDEO_PROVIDER=json2video` explicitly and provide
+`JSON2VIDEO_API_KEY` and `JSON2VIDEO_IMAGE_URL`. This uses JSON2Video's image-and-text movie API:
+it renders the configured still image with the generated title, then this project adds narration
+and captions. It does **not** turn the scene prompts into AI-generated animation. Adding only
+`JSON2VIDEO_API_KEY` does not change providers; Gemini remains the default. There is no fallback
+image, so a missing `JSON2VIDEO_IMAGE_URL` stops the run instead of publishing an off-brand video.
+JSON2Video plan quotas and credits apply; the Gemini cost estimate does not cover JSON2Video.
 
 Set `DRY_RUN=true` to skip paid video-provider rendering and render locally generated test-pattern
 clips instead. Script creation still uses `GEMINI_API_KEY`; dry-run only avoids the paid video
@@ -74,10 +74,12 @@ needed for generating the story and metadata.
 4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
 
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
-The pipeline caps script length and stops before paid video generation if the synthesized
-narration exceeds the selected duration by more than two seconds (never allowing more than
-60 seconds total). Minor TTS timing variation is allowed; the renderer loops the final scene
-to cover a small overrun. In particular, a 45-second target allows TTS output through 47 seconds.
+Script word limits are derived from the measured speaking rate of about 2.5 words per second, so a
+45-second target asks Gemini for roughly 113 words instead of the previous ~58. The pipeline stops
+before paid video generation when the synthesized narration is too long (more than two seconds over
+the target, never above 60 seconds total) **or** more than 15% shorter than the target. Minor TTS
+timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, a
+45-second target allows TTS output from 38.2 through 47 seconds.
 Longer narration stops with a clear error before paid video generation.
 Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
 `GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
@@ -102,30 +104,52 @@ Review generated videos and verify facts before publishing them publicly.
 Requires Python 3.12 and FFmpeg.
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env            # add Gemini key and approve video-generation spend
-set -a; source .env; set +a
+set -a; source .env; set +a     # Windows: load .env with your shell of choice
 python -m unittest discover -s tests
 python -m src.main              # generates a paid video; does not upload
 ```
+
+Tests that need FFmpeg are skipped when `ffmpeg` is not on `PATH`. The offline suite must never
+call a paid provider or need real credentials.
 
 ## Project layout
 
 ```
 src/main.py        pipeline orchestration
+src/config.py      environment-driven configuration and validation
 src/script_gen.py  Hinglish story, metadata, and scene prompts
 src/video_gen.py   paid Omni video generation and cost preflight
 src/tts.py         narration and word timings
 src/render.py      FFmpeg assembly and motion design
 src/captions.py    animated word-group captions
+src/history.py     topic history
 src/youtube.py     private-first upload
+src/util.py        logging and retry helpers
 tests/             offline and mocked API tests
 ```
 
+The renderer always normalizes clips to 1080×1920 at 30 fps, then adds narration and captions.
 The [Gemini video guide](https://ai.google.dev/gemini-api/docs/video) documents 3–15 second video
 generation through the Interactions API. This project requests 15-second, 720p, vertical clips and
 adds its own narration and captions.
 
 JSON2Video uses its [movie API](https://json2video.com/docs/v2/getting-started/quickstart) to
 render a vertical still-image/title clip when selected with `VIDEO_PROVIDER=json2video`.
+
+## Reference links
+
+- Google AI Studio API keys: https://aistudio.google.com/apikey
+- Gemini API documentation: https://ai.google.dev/gemini-api/docs
+- Gemini video generation guide: https://ai.google.dev/gemini-api/docs/video
+- Gemini rate limits: https://aistudio.google.com/rate-limit
+- Gemini pricing: https://ai.google.dev/gemini-api/docs/pricing
+- JSON2Video website: https://json2video.com/
+- JSON2Video API quickstart: https://json2video.com/docs/v2/getting-started/quickstart
+- Google Cloud Console: https://console.cloud.google.com/
+- YouTube Data API v3 documentation: https://developers.google.com/youtube/v3
+- YouTube upload API guide: https://developers.google.com/youtube/v3/guides/uploading_a_video
+- GitHub Actions secrets documentation: https://docs.github.com/actions/security-guides/using-secrets-in-github-actions
+- FFmpeg download and documentation: https://ffmpeg.org/download.html

@@ -10,12 +10,26 @@ TICKS = 10_000_000  # edge-tts offsets are in 100-nanosecond units
 
 
 def probe_duration(path: Path) -> float:
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=nw=1:nk=1", str(path)],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    return float(out)
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(path)],
+            capture_output=True, text=True, check=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "ffprobe was not found; install FFmpeg and add it to PATH "
+            "(https://ffmpeg.org/download.html)") from error
+    except subprocess.CalledProcessError as error:
+        details = (error.stderr or "").strip()
+        raise RuntimeError(
+            f"ffprobe could not read {path}: {details or 'non-zero exit code'}") from error
+    raw = result.stdout.strip()
+    try:
+        return float(raw)
+    except ValueError as error:
+        raise RuntimeError(
+            f"ffprobe returned no usable duration for {path} (got {raw!r})") from error
 
 
 async def _synth(text: str, voice: str, rate: str, out: Path) -> list[dict]:
@@ -55,6 +69,10 @@ def _even_timings(text: str, duration: float) -> list[dict]:
 @retry(times=3, delay=5)
 def synthesize(cfg: Config, text: str, out: Path) -> tuple[float, list[dict]]:
     words = asyncio.run(_synth(text, cfg.tts_voice, cfg.tts_rate, out))
+    if not out.is_file() or out.stat().st_size == 0:
+        raise RuntimeError(
+            f"edge-tts produced no audio for voice {cfg.tts_voice!r}; "
+            "check TTS_VOICE and TTS_RATE")
     duration = probe_duration(out)
     if not words:
         log.warning("No word timings from TTS; using even split for captions")

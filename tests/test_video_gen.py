@@ -8,7 +8,15 @@ from unittest.mock import MagicMock, patch
 
 from src.config import Config
 from google.genai import errors
-from src.video_gen import estimate_cost_usd, generate_scenes
+from src.video_gen import _write_manifest, estimate_cost_usd, generate_scenes
+
+
+def _ready_client(client_factory, content: bytes = b"fake mp4 data"):
+    encoded = base64.b64encode(content).decode("ascii")
+    client = client_factory.return_value
+    client.interactions.create.return_value = SimpleNamespace(
+        output_video=SimpleNamespace(data=encoded))
+    return client
 
 
 class VideoGenerationTests(unittest.TestCase):
@@ -62,6 +70,19 @@ class VideoGenerationTests(unittest.TestCase):
                 generate_scenes(cfg, ["first", "second"], Path(temp_dir))
         post.assert_not_called()
 
+    @patch("src.video_gen.requests.post")
+    def test_json2video_requires_image_url(self, post):
+        cfg = Config(
+            target_seconds=30,
+            video_provider="json2video",
+            json2video_key="test-key",
+            json2video_image_url="",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "JSON2VIDEO_IMAGE_URL"):
+                generate_scenes(cfg, ["first", "second"], Path(temp_dir))
+        post.assert_not_called()
+
     @patch("src.video_gen.requests.get")
     @patch("src.video_gen.requests.post")
     def test_json2video_render_error_is_reported(self, post, get):
@@ -69,6 +90,7 @@ class VideoGenerationTests(unittest.TestCase):
             target_seconds=30,
             video_provider="json2video",
             json2video_key="test-key",
+            json2video_image_url="https://example.com/image.jpg",
         )
         post.return_value.json.return_value = {"project": "project-id"}
         status_response = MagicMock()
@@ -93,10 +115,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.genai.Client")
     def test_generates_scene_files_sequentially(self, client_factory):
         cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
-        payload = base64.b64encode(b"fake mp4 data").decode("ascii")
-        client = client_factory.return_value
-        client.interactions.create.return_value = SimpleNamespace(
-            output_video=SimpleNamespace(data=payload))
+        _ready_client(client_factory)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = generate_scenes(cfg, ["first scene", "second scene", "third scene"],
@@ -106,7 +125,7 @@ class VideoGenerationTests(unittest.TestCase):
                              [b"fake mp4 data"] * 3)
 
         self.assertEqual(client_factory.call_count, 3)
-        calls = client.interactions.create.call_args_list
+        calls = client_factory.return_value.interactions.create.call_args_list
         self.assertEqual(len(calls), 3)
         for call in calls:
             self.assertEqual(call.kwargs["model"], "gemini-omni-1.2-flash")
@@ -114,6 +133,81 @@ class VideoGenerationTests(unittest.TestCase):
             self.assertEqual(call.kwargs["response_format"]["aspect_ratio"], "9:16")
             self.assertEqual(call.kwargs["response_format"]["resolution"], "720p")
             self.assertIn("15-second", call.kwargs["input"])
+            self.assertNotIn("Pixar", call.kwargs["input"])
+            self.assertNotIn("Disney", call.kwargs["input"])
+
+    @patch("src.video_gen.genai.Client")
+    def test_decodes_base64_with_line_breaks(self, client_factory):
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        client = client_factory.return_value
+        encoded = base64.b64encode(b"wrapped payload").decode("ascii")
+        wrapped = "\n".join(encoded[i:i + 4] for i in range(0, len(encoded), 4))
+        client.interactions.create.return_value = SimpleNamespace(
+            output_video=SimpleNamespace(data=wrapped))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
+            self.assertEqual(paths[0].read_bytes(), b"wrapped payload")
+
+    @patch("src.video_gen.genai.Client")
+    def test_reuses_cached_scenes_for_the_same_prompts(self, client_factory):
+        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25)
+        client = _ready_client(client_factory)
+        prompts = ["first scene", "second scene", "third scene"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work = Path(temp_dir)
+            first = generate_scenes(cfg, prompts, work)
+            calls = client.interactions.create.call_count
+            second = generate_scenes(cfg, prompts, work)
+
+        self.assertEqual(calls, 3)
+        self.assertEqual([path.name for path in second], [path.name for path in first])
+        self.assertEqual(client.interactions.create.call_count, 3)
+
+    @patch("src.video_gen.genai.Client")
+    def test_regenerates_only_missing_scenes(self, client_factory):
+        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25)
+        client = _ready_client(client_factory)
+        prompts = ["first scene", "second scene", "third scene"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work = Path(temp_dir)
+            generate_scenes(cfg, prompts, work)
+            (work / "scene_02.mp4").unlink()
+            paths = generate_scenes(cfg, prompts, work)
+            self.assertTrue(all(path.is_file() for path in paths))
+
+        self.assertEqual(client.interactions.create.call_count, 4)
+
+    @patch("src.video_gen.genai.Client")
+    def test_budget_guard_only_charges_for_missing_scenes(self, client_factory):
+        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=1.1)
+        client = _ready_client(client_factory)
+        prompts = ["first scene", "second scene", "third scene"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work = Path(temp_dir)
+            (work / "scene_01.mp4").write_bytes(b"cached")
+            (work / "scene_02.mp4").write_bytes(b"cached")
+            _write_manifest(work, cfg, prompts)
+
+            paths = generate_scenes(cfg, prompts, work)
+
+        self.assertEqual(len(paths), 3)
+        self.assertEqual(client.interactions.create.call_count, 1)
+
+    @patch("src.video_gen.genai.Client")
+    def test_regenerates_when_prompts_change(self, client_factory):
+        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25)
+        client = _ready_client(client_factory)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work = Path(temp_dir)
+            generate_scenes(cfg, ["one", "two", "three"], work)
+            generate_scenes(cfg, ["four", "five", "six"], work)
+
+        self.assertEqual(client.interactions.create.call_count, 6)
 
     @patch("src.video_gen.subprocess.run")
     @patch("src.video_gen.genai.Client")

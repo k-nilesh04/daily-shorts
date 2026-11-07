@@ -8,30 +8,37 @@ from .util import log
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
-    res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    try:
+        res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "ffmpeg was not found; install FFmpeg and add it to PATH "
+            "(https://ffmpeg.org/download.html)") from error
     if res.returncode != 0:
         log.error("FFmpeg failed:\n%s", res.stderr[-2500:])
-        raise RuntimeError("ffmpeg failed")
+        raise RuntimeError(f"ffmpeg failed ({' '.join(cmd)})")
+
+
+def _normalize_filter(cfg: Config) -> str:
+    """FFmpeg filter that pins the output size and frame rate."""
+    if cfg.layout == "frame":
+        size = cfg.frame_size
+        overscan = int(size * 1.08)
+        return (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
+                f"crop={overscan}:{overscan},"
+                f"zoompan=z='min(zoom+0.00035,1.08)':"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
+    # Fullscreen 9:16 vertical video (1080x1920) at the configured frame rate.
+    return (f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
+            f"crop={cfg.width}:{cfg.height},"
+            f"fps={cfg.fps},setsar=1,format=yuv420p")
 
 
 def _normalize(cfg: Config, src: Path, dst: Path, seconds: float) -> None:
-    """Scale and crop each source clip to exact length and resolution."""
-    layout = getattr(cfg, "layout", "fullscreen")
-    if layout == "frame":
-        size = cfg.frame_size
-        overscan = int(size * 1.08)
-        vf = (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
-              f"crop={overscan}:{overscan},"
-              f"zoompan=z='min(zoom+0.00035,1.08)':"
-              f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-              f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
-    else:
-        # Fullscreen 9:16 vertical video (1080x1920)
-        vf = (f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
-              f"crop={cfg.width}:{cfg.height},"
-              f"setsar=1,format=yuv420p")
+    """Scale and crop each source clip to exact length, resolution, and fps."""
     run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(src),
-         "-t", f"{seconds:.3f}", "-vf", vf, "-an",
+         "-t", f"{seconds:.3f}", "-vf", _normalize_filter(cfg), "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", str(dst)])
 
 
@@ -76,6 +83,10 @@ def _presentation_filter(cfg: Config, duration: float) -> str:
 
 def build(cfg: Config, clips: list[Path], voice: Path,
           duration: float, words: list[dict], out: Path, work: Path) -> Path:
+    if not clips:
+        raise ValueError("render.build needs at least one video clip")
+    if duration <= 0:
+        raise ValueError(f"render.build needs a positive narration duration, got {duration!r}")
     work.mkdir(parents=True, exist_ok=True)
     plan: list[tuple[Path, float]] = []
     remaining = duration

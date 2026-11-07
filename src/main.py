@@ -4,16 +4,21 @@ import json
 import logging
 import shutil
 import sys
+from pathlib import Path
 
 from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
 NARRATION_OVERRUN_TOLERANCE_SECONDS = 2
+NARRATION_UNDERRUN_TOLERANCE_RATIO = 0.15
+NARRATION_UNDERRUN_TOLERANCE_MIN_SECONDS = 3
 MAX_SHORT_SECONDS = 60
 
 
 def _validate_narration_duration(duration: float, target_seconds: int) -> None:
+    if duration <= 0:
+        raise RuntimeError("Narration is empty; nothing to render")
     max_duration = min(
         target_seconds + NARRATION_OVERRUN_TOLERANCE_SECONDS,
         MAX_SHORT_SECONDS,
@@ -24,6 +29,30 @@ def _validate_narration_duration(duration: float, target_seconds: int) -> None:
             f"{target_seconds} is {max_duration}s. AI video generation was stopped "
             "to avoid paying for an overlong video."
         )
+    underrun = max(
+        NARRATION_UNDERRUN_TOLERANCE_MIN_SECONDS,
+        target_seconds * NARRATION_UNDERRUN_TOLERANCE_RATIO,
+    )
+    min_duration = max(0.0, target_seconds - underrun)
+    if duration < min_duration:
+        raise RuntimeError(
+            f"Narration is {duration:.1f}s; minimum allowed for TARGET_SECONDS="
+            f"{target_seconds} is {min_duration:.1f}s. AI video generation was stopped "
+            "to avoid paying for an under-length video; regenerate the script or "
+            "lower TARGET_SECONDS."
+        )
+
+
+def _prepare_work_dir(work: Path) -> None:
+    """Reset intermediate files but keep cached scenes for a resumable retry."""
+    work.mkdir(parents=True, exist_ok=True)
+    for child in work.iterdir():
+        if child.name == "scenes":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 def main() -> int:
@@ -38,8 +67,7 @@ def main() -> int:
         log.warning("YT environment variables (YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN) not found; bypassing upload.")
         do_upload = False
 
-    shutil.rmtree(cfg.work_dir, ignore_errors=True)
-    cfg.work_dir.mkdir(parents=True)
+    _prepare_work_dir(cfg.work_dir)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. script

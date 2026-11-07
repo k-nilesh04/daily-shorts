@@ -1,5 +1,6 @@
 """Generate video assets with Gemini Omni or render an image/title via JSON2Video."""
 import base64
+import json
 import math
 import re
 import subprocess
@@ -29,6 +30,8 @@ MAX_RATE_LIMIT_RETRY_DELAY_SECONDS = 120
 REQUEST_TIMEOUT_SECONDS = 60
 MAX_GENERATION_WAIT_SECONDS = 25 * 60
 POLL_INTERVAL_SECONDS = 5
+SCENE_MANIFEST_NAME = "manifest.json"
+SCENE_FILE_PATTERN = re.compile(r"scene_\d{2}\.mp4")
 
 
 def _retry_after_seconds(error: errors.APIError) -> float | None:
@@ -83,9 +86,10 @@ def _generate_one(
                 interaction = client.interactions.create(
                     model=MODEL,
                     input=(
-                        f"Create one 15-second cinematic 3D Pixar Disney style animated video, portrait orientation. "
+                        "Create one 15-second cinematic 3D cartoon animated video, portrait orientation. "
                         f"Visual brief: {prompt.strip()} "
-                        "Features cute expressive cartoon characters, fluid animation, vibrant saturated colors, and comedic charm. "
+                        "Features expressive cartoon characters, fluid animation, vibrant saturated colors, "
+                        "soft cinematic lighting, and comedic charm. "
                         "Generate silent video with no dialogue, narration, text, subtitles, logos, or watermark."
                     ),
                     response_format={
@@ -133,7 +137,8 @@ def _generate_one(
         raise RuntimeError(f"Gemini returned no video for scene {scene_number}")
 
     try:
-        video_bytes = base64.b64decode(encoded, validate=True)
+        # Providers sometimes wrap base64 with newlines; decode a compact copy.
+        video_bytes = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
     except (ValueError, TypeError) as error:
         raise RuntimeError(f"Gemini returned invalid video data for scene {scene_number}") from error
     if not video_bytes:
@@ -205,6 +210,10 @@ def _generate_placeholders(prompts: list[str], work: Path) -> list[Path]:
                 text=True,
                 check=True,
             )
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                "ffmpeg was not found; install FFmpeg and add it to PATH "
+                "(https://ffmpeg.org/download.html)") from error
         except subprocess.CalledProcessError as error:
             details = (error.stderr or "").strip()
             raise RuntimeError(
@@ -288,10 +297,51 @@ def _generate_json2video(
         time.sleep(min(JSON2VIDEO_POLL_INTERVAL_SECONDS, remaining))
 
 
+def _is_valid_clip(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size > 0
+
+
+def _manifest_matches(work: Path, cfg: Config, prompts: list[str]) -> bool:
+    """True when the cached scene directory belongs to this exact request."""
+    try:
+        manifest = json.loads((work / SCENE_MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    return (
+        manifest.get("prompts") == prompts
+        and manifest.get("provider") == cfg.video_provider
+        and bool(manifest.get("dry_run")) == cfg.dry_run
+    )
+
+
+def _write_manifest(work: Path, cfg: Config, prompts: list[str]) -> None:
+    manifest = {
+        "provider": cfg.video_provider,
+        "dry_run": cfg.dry_run,
+        "prompts": prompts,
+    }
+    (work / SCENE_MANIFEST_NAME).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _clear_scene_files(work: Path) -> None:
+    for child in work.iterdir():
+        if not child.is_file():
+            continue
+        if child.name == SCENE_MANIFEST_NAME or SCENE_FILE_PATTERN.fullmatch(child.name):
+            child.unlink()
+
+
 def generate_scenes(
     cfg: Config, prompts: list[str], work: Path, text: str = "Hello from Python",
 ) -> list[Path]:
-    """Generate provider clips, or test-pattern clips in dry-run mode."""
+    """Generate provider clips, or test-pattern clips in dry-run mode.
+
+    Completed clips are cached alongside a manifest of the exact request so a
+    retry after a late failure does not pay to regenerate finished scenes.
+    """
     expected_count = math.ceil(cfg.target_seconds / MAX_CLIP_SECONDS)
     if not 30 <= cfg.target_seconds <= 60:
         raise ValueError("TARGET_SECONDS must be between 30 and 60")
@@ -301,30 +351,54 @@ def generate_scenes(
     if not cfg.dry_run and cfg.video_provider == "gemini" and not cfg.ai_video_key:
         raise RuntimeError("OMNI_API_KEY (or GEMINI_API_KEY) is required for AI video generation")
 
-    estimate = estimate_cost_usd(len(prompts)) if cfg.video_provider == "gemini" else None
-    if (not cfg.dry_run and estimate is not None
-            and (cfg.ai_video_max_usd <= 0 or estimate > cfg.ai_video_max_usd)):
+    work.mkdir(parents=True, exist_ok=True)
+    if not _manifest_matches(work, cfg, prompts):
+        _clear_scene_files(work)
+
+    if cfg.video_provider == "json2video" and not cfg.dry_run:
+        dest = work / "scene_01.mp4"
+        if _is_valid_clip(dest):
+            log.info("Reusing existing JSON2Video render: %s", dest.name)
+            _write_manifest(work, cfg, prompts)
+            return [dest]
+        log.info("Rendering JSON2Video still-image template at %s", JSON2VIDEO_RESOLUTION)
+        result = _generate_json2video(cfg, work, text)
+        _write_manifest(work, cfg, prompts)
+        return result
+
+    paths = [work / f"scene_{index:02d}.mp4" for index in range(1, len(prompts) + 1)]
+    pending = [
+        (index, prompt, path)
+        for index, (prompt, path) in enumerate(zip(prompts, paths), start=1)
+        if not _is_valid_clip(path)
+    ]
+    if not pending:
+        log.info("Reusing %d cached scene clip(s) from %s", len(paths), work)
+        _write_manifest(work, cfg, prompts)
+        return paths
+    if len(pending) < len(paths):
+        log.info("Reusing %d cached scene clip(s); generating %d",
+                 len(paths) - len(pending), len(pending))
+
+    if cfg.dry_run:
+        log.info("DRY_RUN=true; skipping paid video generation and creating placeholders")
+        result = _generate_placeholders(prompts, work)
+        _write_manifest(work, cfg, prompts)
+        return result
+
+    estimate = estimate_cost_usd(len(pending))
+    if cfg.ai_video_max_usd <= 0 or estimate > cfg.ai_video_max_usd:
         raise RuntimeError(
             f"Refusing paid AI video generation: estimated video cost is about "
-            f"${estimate:.2f} at 720p for {len(prompts)} clips, but "
+            f"${estimate:.2f} at 720p for {len(pending)} clip(s), but "
             f"AI_VIDEO_MAX_USD is ${cfg.ai_video_max_usd:.2f}. "
             "This is a preflight estimate, not a provider-enforced billing cap. "
             "Increase the limit only after reviewing current Gemini pricing.")
 
-    work.mkdir(parents=True, exist_ok=True)
-    if cfg.dry_run:
-        log.info("DRY_RUN=true; skipping paid video generation and creating placeholders")
-        return _generate_placeholders(prompts, work)
-
-    if cfg.video_provider == "json2video":
-        log.info("Rendering JSON2Video still-image template at %s", JSON2VIDEO_RESOLUTION)
-        return _generate_json2video(cfg, work, text)
-
-    log.info("Generating %d AI scenes sequentially at 720p (estimated video cost: $%.2f)",
-             len(prompts), estimate)
-    paths = [work / f"scene_{index:02d}.mp4" for index in range(1, len(prompts) + 1)]
+    log.info("Generating %d AI scene(s) sequentially at 720p (estimated video cost: $%.2f)",
+             len(pending), estimate)
     deadline = time.monotonic() + MAX_GENERATION_WAIT_SECONDS
-    return [
+    for index, prompt, path in pending:
         _generate_one(cfg, prompt, path, index, deadline)
-        for index, (prompt, path) in enumerate(zip(prompts, paths), start=1)
-    ]
+    _write_manifest(work, cfg, prompts)
+    return paths
