@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.config import Config
 from google.genai import errors
@@ -14,6 +14,72 @@ from src.video_gen import estimate_cost_usd, generate_scenes
 class VideoGenerationTests(unittest.TestCase):
     def test_cost_estimate_uses_max_fifteen_second_clips(self):
         self.assertAlmostEqual(estimate_cost_usd(3), 3.15)
+
+    @patch("src.video_gen.time.sleep")
+    @patch("src.video_gen.requests.get")
+    @patch("src.video_gen.requests.post")
+    def test_json2video_renders_and_downloads_vertical_movie(
+            self, post, get, sleep):
+        cfg = Config(
+            target_seconds=30,
+            video_provider="json2video",
+            json2video_key="test-key",
+            json2video_image_url="https://example.com/image.jpg",
+        )
+        post.return_value.json.return_value = {"project": "project-id"}
+        status_response = MagicMock()
+        status_response.json.side_effect = [
+            {"movie": {"status": "pending"}},
+            {"movie": {"status": "done", "url": "https://example.com/video.mp4"}},
+        ]
+        media_response = MagicMock(content=b"rendered mp4")
+        get.side_effect = [status_response, status_response, media_response]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = generate_scenes(
+                cfg, ["first scene", "second scene"], Path(temp_dir), text="Short title")
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(paths[0].read_bytes(), b"rendered mp4")
+
+        post.assert_called_once()
+        self.assertEqual(post.call_args.kwargs["headers"], {"x-api-key": "test-key"})
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["resolution"], "instagram-story")
+        self.assertEqual(payload["scenes"][0]["duration"], 30)
+        self.assertEqual(payload["scenes"][0]["elements"], [
+            {"type": "image", "src": "https://example.com/image.jpg"},
+            {"type": "text", "text": "Short title", "style": "001"},
+        ])
+        self.assertEqual(get.call_count, 3)
+        self.assertEqual(get.call_args_list[0].kwargs["params"], {"project": "project-id"})
+        sleep.assert_called_once_with(3)
+
+    @patch("src.video_gen.requests.post")
+    def test_json2video_requires_api_key(self, post):
+        cfg = Config(target_seconds=30, video_provider="json2video")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "JSON2VIDEO_API_KEY is required"):
+                generate_scenes(cfg, ["first", "second"], Path(temp_dir))
+        post.assert_not_called()
+
+    @patch("src.video_gen.requests.get")
+    @patch("src.video_gen.requests.post")
+    def test_json2video_render_error_is_reported(self, post, get):
+        cfg = Config(
+            target_seconds=30,
+            video_provider="json2video",
+            json2video_key="test-key",
+        )
+        post.return_value.json.return_value = {"project": "project-id"}
+        status_response = MagicMock()
+        status_response.json.return_value = {
+            "movie": {"status": "error", "message": "invalid image URL"},
+        }
+        get.return_value = status_response
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "invalid image URL"):
+                generate_scenes(cfg, ["first", "second"], Path(temp_dir))
 
     @patch("src.video_gen.genai.Client")
     def test_budget_guard_rejects_before_calling_provider(self, client_factory):

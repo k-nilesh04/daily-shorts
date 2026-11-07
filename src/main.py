@@ -50,18 +50,26 @@ def main() -> int:
     duration, words = tts.synthesize(cfg, meta["script"], voice)
     _validate_narration_duration(duration, cfg.target_seconds)
 
-    # 3. Generate story-matched video scenes sequentially to avoid rate-limit bursts.
+    # 3. Generate the configured video asset(s).
+    is_json2video = cfg.video_provider == "json2video"
+    estimated_cost = (
+        None if is_json2video
+        else round(video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2)
+    )
     meta["video_generation"] = {
-        "model": video_gen.MODEL,
-        "resolution": video_gen.RESOLUTION,
-        "scene_count": len(meta["scene_prompts"]),
+        "provider": cfg.video_provider,
+        "model": video_gen.JSON2VIDEO_MODEL if is_json2video else video_gen.MODEL,
+        "resolution": video_gen.JSON2VIDEO_RESOLUTION if is_json2video else video_gen.RESOLUTION,
+        "scene_count": 1 if is_json2video else len(meta["scene_prompts"]),
         "dry_run": cfg.dry_run,
-        "estimated_video_cost_usd": round(
-            video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2),
+        "estimated_video_cost_usd": estimated_cost,
     }
     meta_path = cfg.output_dir / "meta.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    clips = video_gen.generate_scenes(cfg, meta["scene_prompts"], cfg.work_dir / "scenes")
+    clips = video_gen.generate_scenes(
+        cfg, meta["scene_prompts"], cfg.work_dir / "scenes",
+        text=meta.get("title", "Hello from Python"),
+    )
 
     # 4. render
     video = cfg.output_dir / "video.mp4"

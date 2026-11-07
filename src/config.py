@@ -54,6 +54,11 @@ class Config:
 
     # keys
     gemini_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
+    json2video_key: str = field(default_factory=lambda: _env("JSON2VIDEO_API_KEY"))
+    video_provider: str = field(default_factory=lambda: _env("VIDEO_PROVIDER", "json2video" if _env("JSON2VIDEO_API_KEY") else "gemini"))
+    json2video_image_url: str = field(default_factory=lambda: _env(
+        "JSON2VIDEO_IMAGE_URL",
+        "https://cdn.json2video.com/assets/images/london-01.jpg"))
     yt_client_id: str = field(default_factory=lambda: _env("YT_CLIENT_ID"))
     yt_client_secret: str = field(default_factory=lambda: _env("YT_CLIENT_SECRET"))
     yt_refresh_token: str = field(default_factory=lambda: _env("YT_REFRESH_TOKEN"))
@@ -73,6 +78,8 @@ class Config:
     def __post_init__(self) -> None:
         if not 30 <= self.target_seconds <= 60:
             raise ValueError("TARGET_SECONDS must be between 30 and 60")
+        if self.video_provider not in {"gemini", "json2video"}:
+            raise ValueError("VIDEO_PROVIDER must be 'gemini' or 'json2video'")
 
     @property
     def can_upload(self) -> bool:

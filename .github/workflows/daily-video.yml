@@ -62,6 +62,9 @@ jobs:
           UPLOAD: ${{ env.UPLOAD }}
           DRY_RUN: ${{ env.DRY_RUN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          JSON2VIDEO_API_KEY: ${{ secrets.JSON2VIDEO_API_KEY }}
+          VIDEO_PROVIDER: ${{ vars.VIDEO_PROVIDER }}
+          JSON2VIDEO_IMAGE_URL: ${{ vars.JSON2VIDEO_IMAGE_URL }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}

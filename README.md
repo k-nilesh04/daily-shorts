@@ -33,7 +33,15 @@ available quota.
 Video-generation requests use bounded retries and polling, with a 25-minute maximum total wait
 across all scenes. The Actions job is limited to 40 minutes.
 
-Set `DRY_RUN=true` to skip paid Omni video generation and render locally generated test-pattern
+To render through JSON2Video instead, set `VIDEO_PROVIDER=json2video` and provide
+`JSON2VIDEO_API_KEY`. This uses JSON2Video's image-and-text movie API: it renders the
+configured still image with the generated title, then this project adds narration and captions.
+It does **not** turn the scene prompts into AI-generated animation. Set
+`JSON2VIDEO_IMAGE_URL` to a publicly accessible image URL; by default it uses the sample London
+image from the API example. JSON2Video plan quotas and credits apply; the Gemini cost estimate
+does not cover JSON2Video.
+
+Set `DRY_RUN=true` to skip paid video-provider rendering and render locally generated test-pattern
 clips instead. Script creation still uses `GEMINI_API_KEY`; dry-run only avoids the paid video
 generation calls. The Actions workflow enables dry-run for manual runs with `upload = false` and
 for scheduled runs until all YouTube upload secrets are configured. Once scheduled upload
@@ -47,11 +55,17 @@ Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey
 Gemini API tier/billing for the Google Cloud project attached to that key. The same key can be used
 for both script generation and Omni video generation.
 
+For JSON2Video rendering, set `VIDEO_PROVIDER=json2video` and `JSON2VIDEO_API_KEY` in `.env`
+instead. Optionally set `JSON2VIDEO_IMAGE_URL` to a public image URL. `GEMINI_API_KEY` is still
+needed for generating the story and metadata.
+
 ### 2. Run on GitHub Actions
 
 1. Add repository secret `GEMINI_API_KEY` under **Settings → Secrets and variables → Actions**.
    If you use a separate API key for video, add `OMNI_API_KEY`; otherwise the workflow uses
    `GEMINI_API_KEY` for both.
+   For JSON2Video, add `JSON2VIDEO_API_KEY` and set the Actions variable `VIDEO_PROVIDER` to
+   `json2video`. Optionally set `JSON2VIDEO_IMAGE_URL` as a variable.
 2. The default `AI_VIDEO_MAX_USD=3.25` is set in code. To override it, add a repository Actions
    variable named `AI_VIDEO_MAX_USD` only after reviewing the current pricing.
 3. Open **Actions → Daily Video → Run workflow**, select `main`, and keep `upload = false` for a
@@ -112,3 +126,6 @@ tests/             offline and mocked API tests
 The [Gemini video guide](https://ai.google.dev/gemini-api/docs/video) documents 3–15 second video
 generation through the Interactions API. This project requests 15-second, 720p, vertical clips and
 adds its own narration and captions.
+
+JSON2Video uses its [movie API](https://json2video.com/docs/v2/getting-started/quickstart) to
+render a vertical still-image/title clip when selected with `VIDEO_PROVIDER=json2video`.
