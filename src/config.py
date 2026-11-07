@@ -31,9 +31,21 @@ class Config:
     height: int = 1920
     fps: int = 30
     caption_font: str = field(default_factory=lambda: _env("CAPTION_FONT", "DejaVu Sans"))
-    caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "84")))
+    caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "78")))
     caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", True))
     segment_seconds: float = field(default_factory=lambda: float(_env("SEGMENT_SECONDS", "4.5")))
+
+    @property
+    def frame_size(self) -> int:
+        return min(int(self.width * 5 / 6), int(self.height * 0.47))
+
+    @property
+    def frame_x(self) -> int:
+        return (self.width - self.frame_size) // 2
+
+    @property
+    def frame_y(self) -> int:
+        return (self.height - self.frame_size) // 2
 
     # keys
     gemini_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))

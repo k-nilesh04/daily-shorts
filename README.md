@@ -5,10 +5,14 @@ Fully automated daily YouTube Shorts, rendered for free on GitHub Actions.
 ```
 cron → Gemini (script+metadata) → edge-tts (voice + word timings)
      → Wikimedia Commons (reusable video clips) → [optional hook clip]
-     → FFmpeg (1080x1920 + burned-in captions) → YouTube upload → history.json
+     → FFmpeg (square footage, black 9:16 canvas, animated captions/HUD)
+     → YouTube upload → history.json
 ```
 
 Default niche: *surprising science and history facts* (change with the `NICHE` variable).
+The video places a square, gently zooming footage window at the center of a black vertical canvas,
+with cyan technical frame accents, a moving scan line and progress bar, and timed word-highlight
+captions.
 
 ## Setup, in order
 

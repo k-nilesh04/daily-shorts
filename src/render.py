@@ -21,12 +21,56 @@ def segments_needed(cfg: Config, duration: float, has_hook: bool) -> int:
 
 
 def _normalize(cfg: Config, src: Path, dst: Path, seconds: float) -> None:
-    """Crop/scale to 9:16, constant fps, no audio, exact length (loops short clips)."""
-    vf = (f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
-          f"crop={cfg.width}:{cfg.height},setsar=1,fps={cfg.fps},format=yuv420p")
+    """Crop each source to a square shot, with a slow push-in and exact length."""
+    size = cfg.frame_size
+    overscan = int(size * 1.08)
+    vf = (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
+          f"crop={overscan}:{overscan},"
+          f"zoompan=z='min(zoom+0.00035,1.08)':"
+          f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+          f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
     run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(src),
          "-t", f"{seconds:.3f}", "-vf", vf, "-an",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", str(dst)])
+
+
+def _presentation_filter(cfg: Config, duration: float) -> str:
+    x, y, size = cfg.frame_x, cfg.frame_y, cfg.frame_size
+    border = 8
+    edge = 56
+    progress_y = cfg.height - 100
+    progress_width = max(1, size - 2 * border)
+    progress_slope = (progress_width - 1) / max(duration, 0.01)
+    scan_y = f"'{y}+mod(t*28,{size})'"
+    return (
+        f"[1:v]scale={size}:{size}:force_original_aspect_ratio=increase,"
+        f"crop={size}:{size},setsar=1,format=yuv420p[square];"
+        f"[0:v][square]overlay=(W-w)/2:(H-h)/2:shortest=1,"
+        f"drawbox=x={x - border}:y={y - border}:w={size + 2 * border}:"
+        f"h={size + 2 * border}:color=0x00d7ff@0.72:t=2,"
+        f"drawbox=x={x - border}:y={y - border}:w={edge}:h=4:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x - border}:y={y - border}:w=4:h={edge}:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x + size + border - edge}:y={y - border}:w={edge}:h=4:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x + size + border - 4}:y={y - border}:w=4:h={edge}:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x - border}:y={y + size + border - 4}:w={edge}:h=4:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x - border}:y={y + size + border - edge}:w=4:h={edge}:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x + size + border - edge}:y={y + size + border - 4}:"
+        f"w={edge}:h=4:color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x + size + border - 4}:y={y + size + border - edge}:"
+        f"w=4:h={edge}:color=0x00d7ff@1:t=fill,"
+        f"drawbox=x={x}:y={scan_y}:w={size}:h=2:color=0x00d7ff@0.18:t=fill,"
+        f"drawbox=x={x}:y={progress_y}:w={progress_width}:h=3:"
+        f"color=0x606060@0.75:t=fill,"
+        f"drawbox=x={x}:y={progress_y}:w='1+{progress_slope:.6f}*t':h=3:"
+        f"color=0x00d7ff@1:t=fill,"
+        f"ass=captions.ass[vout]"
+    )
 
 
 def build(cfg: Config, clips: list[Path], hook: Path | None, voice: Path,
@@ -63,9 +107,11 @@ def build(cfg: Config, clips: list[Path], hook: Path | None, voice: Path,
 
     write_ass(cfg, words, work / "captions.ass")
     out.parent.mkdir(parents=True, exist_ok=True)
-    # run inside `work` so the ass path needs no escaping
-    run(["ffmpeg", "-y", "-loglevel", "error", "-i", "visual.mp4", "-i", str(voice.resolve()),
-         "-vf", "ass=captions.ass", "-map", "0:v", "-map", "1:a",
+    run(["ffmpeg", "-y", "-loglevel", "error",
+         "-f", "lavfi", "-i", f"color=c=black:s={cfg.width}x{cfg.height}:r={cfg.fps}:d={duration:.3f}",
+         "-i", "visual.mp4", "-i", str(voice.resolve()),
+         "-filter_complex", _presentation_filter(cfg, duration),
+         "-map", "[vout]", "-map", "2:a",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
          str(out.resolve())], cwd=work)

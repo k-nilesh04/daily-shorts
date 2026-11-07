@@ -21,6 +21,10 @@ Language of narration/title/description: {cfg.language}
 Write ONE new short video. Rules:
 - Narration: about {words} words (a {cfg.target_seconds}-second read), spoken style.
 - First sentence is a strong hook (a surprising claim or question). No greetings, no "welcome".
+- Keep the story vivid and fast, not like an encyclopedia entry: use conversational phrasing,
+  concrete imagery, varied sentence lengths, and an escalating reveal.
+- Give the viewer a reason to stay: open a curiosity gap, answer it with a clear explanation,
+  and finish with one memorable takeaway.
 - Only include facts you are confident are true. No invented statistics, quotes or names.
 - End with a short closing line that makes people want to follow or comment.
 - Plain sentences only: no emojis, hashtags, stage directions or markdown in "script".

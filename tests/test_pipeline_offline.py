@@ -49,6 +49,41 @@ class OfflinePipeline(unittest.TestCase):
             self.assertEqual(info, "1080,1920")
             self.assertAlmostEqual(probe_duration(out), dur, delta=0.6)
 
+            def pixel(x, y):
+                return subprocess.run(
+                    ["ffmpeg", "-v", "error", "-ss", "1", "-i", str(out), "-frames:v", "1",
+                     "-vf", f"crop=1:1:{x}:{y},format=rgb24", "-f", "rawvideo", "-"],
+                    capture_output=True, check=True).stdout
+
+            self.assertEqual(pixel(10, 10), b"\x00\x00\x00")
+            self.assertNotEqual(pixel(540, 960), b"\x00\x00\x00")
+
+class RenderDesignTests(unittest.TestCase):
+    def test_square_frame_layout_and_motion_overlays(self):
+        cfg = config.load()
+        self.assertEqual(cfg.frame_size, 900)
+        self.assertEqual((cfg.frame_x, cfg.frame_y), (90, 510))
+        filters = render._presentation_filter(cfg, 45)
+        self.assertIn("overlay=(W-w)/2:(H-h)/2", filters)
+        self.assertIn("mod(t*28,900)", filters)
+        self.assertIn("drawbox=", filters)
+        self.assertIn("ass=captions.ass", filters)
+
+    def test_captions_have_karaoke_and_pop_animation(self):
+        cfg = config.load()
+        words = [
+            {"text": "Watch", "start": 0.0, "end": 0.3},
+            {"text": "this", "start": 0.3, "end": 0.55},
+            {"text": "carefully.", "start": 0.55, "end": 1.0},
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            path = captions.write_ass(cfg, words, Path(d) / "captions.ass")
+            content = path.read_text(encoding="utf-8")
+        self.assertIn(r"\kf30", content)
+        self.assertIn(r"\t(0,130,\fscx100\fscy100)", content)
+        self.assertIn("FIELD NOTES", content)
+        self.assertIn(r"\pos(540,1580)", content)
+
 
 if __name__ == "__main__":
     unittest.main()
