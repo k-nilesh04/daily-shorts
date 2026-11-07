@@ -4,7 +4,7 @@ Automated 30–60 second Hindi/Hinglish YouTube storytelling videos, rendered on
 
 ```
 Gemini (story + scene prompts) → edge-tts (Hinglish narration + word timings)
-  → Gemini Omni Flash (matching 15-second AI video scenes, generated in parallel)
+  → Gemini Omni Flash (matching 15-second AI video scenes, generated sequentially)
   → FFmpeg (centered square video, black vertical canvas, motion graphics + captions)
   → optional private YouTube upload → topic history
 ```
@@ -16,15 +16,18 @@ portrait footage cropped into the centered square design.
 
 Gemini Omni video generation is **paid** and has no free tier. Google's [current pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-omni-1.2-flash)
 estimates about **$0.07 per second for 720p output**. A 45-second Short uses three 15-second scene
-requests, generated in parallel, and costs about **$3.15** for video output. A 60-second Short is
-about **$4.20**. Parallel generation reduces waiting time, not cost.
+requests and costs about **$3.15** for video output. A 60-second Short is
+about **$4.20**.
 
 `AI_VIDEO_MAX_USD` defaults to `$3.25`. The workflow refuses a video whose estimated scene cost
 exceeds that limit, so the default supports up to 45 seconds. This is an application-side estimate,
 **not a provider-enforced billing cap**; actual charges can differ. Set a Google Cloud billing budget
 alert (for example, $100/month) and review actual usage. At one 45-second generation per day,
 expected video-generation cost is about **$94.50 per 30 days**. Manual test runs also incur
-generation charges even when YouTube upload is disabled.
+generation charges even when YouTube upload is disabled. Generation is sequential with bounded
+backoff retries for HTTP 429; repeated 429 errors can still mean the project's model quota, usage
+tier, or billing limit needs attention. Check the project's active limits in
+[AI Studio](https://aistudio.google.com/rate-limit).
 
 ## Setup
 
@@ -46,6 +49,8 @@ for both script generation and Omni video generation.
 4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
 
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
+The pipeline caps script length and stops before paid video generation if the synthesized
+narration exceeds the selected duration.
 Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
 `GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
 $3.25 estimated-cost limit; increase that variable only if you approve the higher spend.

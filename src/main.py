@@ -9,6 +9,15 @@ from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
+def _validate_narration_duration(duration: float, target_seconds: int) -> None:
+    if duration > target_seconds:
+        raise RuntimeError(
+            f"Narration is {duration:.1f}s, longer than TARGET_SECONDS="
+            f"{target_seconds}. Shorten the generated script or choose a longer "
+            "target; AI video generation was stopped to avoid paying for an overlong video."
+        )
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser()
@@ -31,8 +40,9 @@ def main() -> int:
     # 2. voice + word timings
     voice = cfg.work_dir / "voice.mp3"
     duration, words = tts.synthesize(cfg, meta["script"], voice)
+    _validate_narration_duration(duration, cfg.target_seconds)
 
-    # 3. Generate story-matched video scenes in parallel.
+    # 3. Generate story-matched video scenes sequentially to avoid rate-limit bursts.
     meta["video_generation"] = {
         "model": video_gen.MODEL,
         "resolution": video_gen.RESOLUTION,

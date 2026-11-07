@@ -1,11 +1,11 @@
 """Generate story-matched video scenes with Gemini Omni Flash."""
 import base64
 import math
-from concurrent.futures import ThreadPoolExecutor
+import time
 from pathlib import Path
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 from .config import Config
 from .util import log
@@ -14,6 +14,8 @@ MODEL = "gemini-omni-1.2-flash"
 MAX_CLIP_SECONDS = 15
 ESTIMATED_USD_PER_SECOND_720P = 0.07
 RESOLUTION = "720p"
+MAX_RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_RETRY_DELAY_SECONDS = 30
 
 
 def estimate_cost_usd(scene_count: int) -> float:
@@ -26,21 +28,39 @@ def _generate_one(cfg: Config, prompt: str, dest: Path, scene_number: int) -> Pa
         http_options=types.HttpOptions(api_version="v1beta"),
     )
     try:
-        interaction = client.interactions.create(
-            model=MODEL,
-            input=(
-                f"Create one 15-second cinematic documentary video, portrait orientation. "
-                f"Visual brief: {prompt.strip()} "
-                "Make the action visually engaging and suitable for a Hindi/Hinglish story. "
-                "Generate silent video with no dialogue, narration, text, subtitles, logos, or watermark."
-            ),
-            response_format={
-                "type": "video",
-                "aspect_ratio": "9:16",
-                "resolution": RESOLUTION,
-            },
-            timeout=900,
-        )
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            try:
+                interaction = client.interactions.create(
+                    model=MODEL,
+                    input=(
+                        f"Create one 15-second cinematic documentary video, portrait orientation. "
+                        f"Visual brief: {prompt.strip()} "
+                        "Make the action visually engaging and suitable for a Hindi/Hinglish story. "
+                        "Generate silent video with no dialogue, narration, text, subtitles, logos, or watermark."
+                    ),
+                    response_format={
+                        "type": "video",
+                        "aspect_ratio": "9:16",
+                        "resolution": RESOLUTION,
+                    },
+                    timeout=900,
+                )
+                break
+            except errors.APIError as error:
+                if error.code != 429:
+                    raise
+                if attempt == MAX_RATE_LIMIT_RETRIES:
+                    raise RuntimeError(
+                        f"Gemini video generation for scene {scene_number} was rate-limited "
+                        f"after {attempt + 1} attempts (HTTP 429). Check the project's Gemini "
+                        "Omni rate limits, usage tier, and billing in AI Studio."
+                    ) from error
+                wait = RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** attempt)
+                log.warning(
+                    "Scene %d rate-limited by Gemini (HTTP 429). Retry %d/%d in %ds",
+                    scene_number, attempt + 1, MAX_RATE_LIMIT_RETRIES, wait,
+                )
+                time.sleep(wait)
     finally:
         client.close()
 
@@ -62,7 +82,7 @@ def _generate_one(cfg: Config, prompt: str, dest: Path, scene_number: int) -> Pa
 
 
 def generate_scenes(cfg: Config, prompts: list[str], work: Path) -> list[Path]:
-    """Generate the complete scene set in parallel after a fail-closed cost check."""
+    """Generate scenes sequentially after a fail-closed cost check."""
     expected_count = math.ceil(cfg.target_seconds / MAX_CLIP_SECONDS)
     if not 30 <= cfg.target_seconds <= 60:
         raise ValueError("TARGET_SECONDS must be between 30 and 60")
@@ -82,12 +102,10 @@ def generate_scenes(cfg: Config, prompts: list[str], work: Path) -> list[Path]:
             "Increase the limit only after reviewing current Gemini pricing.")
 
     work.mkdir(parents=True, exist_ok=True)
-    log.info("Generating %d AI scenes in parallel at 720p (estimated video cost: $%.2f)",
+    log.info("Generating %d AI scenes sequentially at 720p (estimated video cost: $%.2f)",
              len(prompts), estimate)
     paths = [work / f"scene_{index:02d}.mp4" for index in range(1, len(prompts) + 1)]
-    with ThreadPoolExecutor(max_workers=len(prompts)) as executor:
-        futures = [
-            executor.submit(_generate_one, cfg, prompt, path, index)
-            for index, (prompt, path) in enumerate(zip(prompts, paths), start=1)
-        ]
-        return [future.result() for future in futures]
+    return [
+        _generate_one(cfg, prompt, path, index)
+        for index, (prompt, path) in enumerate(zip(prompts, paths), start=1)
+    ]

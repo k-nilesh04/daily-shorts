@@ -6,7 +6,7 @@ from unittest.mock import patch
 from google.genai import types
 
 from src.config import Config
-from src.script_gen import generate
+from src.script_gen import _parse, generate
 
 
 class ScriptGenerationTests(unittest.TestCase):
@@ -36,6 +36,20 @@ class ScriptGenerationTests(unittest.TestCase):
             http_options=types.HttpOptions(api_version="v1beta"),
         )
         self.assertEqual(result["topic"], response_data["topic"])
+
+    def test_rejects_scripts_over_duration_word_limit(self):
+        response_data = {
+            "topic": "Ancient Roman Concrete",
+            "title": "Why Roman Concrete Lasts",
+            "script": " ".join(["story"] * 91),
+            "description": "A fact about Roman concrete.",
+            "tags": ["history"],
+            "keywords": ["roman concrete"],
+            "scene_prompts": ["scene one", "scene two", "scene three"],
+        }
+
+        with self.assertRaisesRegex(ValueError, "maximum of 90 words"):
+            _parse(json.dumps(response_data), scene_count=3, max_words=90)
 
 
 if __name__ == "__main__":

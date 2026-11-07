@@ -15,7 +15,8 @@ REQUIRED = {
 
 
 def _prompt(cfg: Config, avoid: list[str]) -> str:
-    words = int(cfg.target_seconds * 2.5)  # ~2.5 spoken words per second
+    words = int(cfg.target_seconds * 1.5)
+    max_words = int(cfg.target_seconds * 2)
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
     scene_count = math.ceil(cfg.target_seconds / 15)
     language_rule = (
@@ -28,7 +29,8 @@ Niche: {cfg.niche}
 Language of narration/title/description: {cfg.language}
 
 Write ONE new short video. Rules:
-- Narration: about {words} words (a {cfg.target_seconds}-second read), spoken style.
+- Narration: about {words} words, and never more than {max_words} whitespace-separated words.
+  Keep the spoken story concise enough to fit within {cfg.target_seconds} seconds.
 - {language_rule}
 - First sentence is a strong hook (a surprising claim or question). No greetings, no "welcome".
 - Keep the story vivid and fast, not like an encyclopedia entry: use conversational phrasing,
@@ -58,7 +60,7 @@ Return ONLY a JSON object with exactly these keys:
 }}"""
 
 
-def _parse(text: str, scene_count: int) -> dict:
+def _parse(text: str, scene_count: int, max_words: int) -> dict:
     text = text.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
     data = json.loads(text)
@@ -74,6 +76,8 @@ def _parse(text: str, scene_count: int) -> dict:
         raise ValueError(f"scene_prompts must contain exactly {scene_count} non-empty prompts")
     data["title"] = str(data["title"]).strip()[:95]
     data["script"] = " ".join(str(data["script"]).split())
+    if len(data["script"].split()) > max_words:
+        raise ValueError(f"script exceeds the maximum of {max_words} words")
     data["tags"] = [str(t).strip().lstrip("#") for t in data["tags"]][:12]
     return data
 
@@ -94,6 +98,10 @@ def generate(cfg: Config, avoid: list[str]) -> dict:
             temperature=0.9,
         ),
     )
-    data = _parse(resp.text, math.ceil(cfg.target_seconds / 15))
+    data = _parse(
+        resp.text,
+        math.ceil(cfg.target_seconds / 15),
+        int(cfg.target_seconds * 2),
+    )
     log.info("Script ready: %s (%d words)", data["title"], len(data["script"].split()))
     return data
