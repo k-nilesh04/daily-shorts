@@ -58,7 +58,10 @@ def _parse(text: str) -> dict:
 def generate(cfg: Config, avoid: list[str]) -> dict:
     if not cfg.gemini_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
-    client = genai.Client(api_key=cfg.gemini_key)
+    client = genai.Client(
+        api_key=cfg.gemini_key,
+        http_options=types.HttpOptions(api_version="v1beta"),
+    )
     resp = client.models.generate_content(
         model=cfg.gemini_model,
         contents=_prompt(cfg, avoid),

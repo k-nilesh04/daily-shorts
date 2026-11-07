@@ -1,0 +1,38 @@
+import json
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from google.genai import types
+
+from src.config import Config
+from src.script_gen import generate
+
+
+class ScriptGenerationTests(unittest.TestCase):
+    @patch("src.script_gen.genai.Client")
+    def test_json_generation_uses_v1beta(self, client_factory):
+        response_data = {
+            "topic": "Ancient Roman Concrete",
+            "title": "Why Roman Concrete Lasts",
+            "script": "Roman concrete can last for thousands of years.",
+            "description": "A fact about Roman concrete.",
+            "tags": ["history"],
+            "keywords": ["roman concrete"],
+            "hook_prompt": "Show an ancient Roman structure.",
+        }
+        client = client_factory.return_value
+        client.models.generate_content.return_value = SimpleNamespace(
+            text=json.dumps(response_data))
+
+        result = generate(Config(gemini_key="test-key"), [])
+
+        client_factory.assert_called_once_with(
+            api_key="test-key",
+            http_options=types.HttpOptions(api_version="v1beta"),
+        )
+        self.assertEqual(result["topic"], response_data["topic"])
+
+
+if __name__ == "__main__":
+    unittest.main()
