@@ -1,4 +1,6 @@
 import os
+os.environ["DRY_RUN"] = "false"
+os.environ.pop("VIDEO_PROVIDER", None)
 import unittest
 from unittest.mock import patch
 

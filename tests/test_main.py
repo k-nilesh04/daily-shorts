@@ -1,3 +1,6 @@
+import os
+os.environ["DRY_RUN"] = "false"
+os.environ.pop("VIDEO_PROVIDER", None)
 import tempfile
 import unittest
 from pathlib import Path

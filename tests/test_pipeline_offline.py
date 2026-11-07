@@ -1,3 +1,6 @@
+import os
+os.environ["DRY_RUN"] = "false"
+os.environ.pop("VIDEO_PROVIDER", None)
 """Offline smoke test: no API keys or internet needed, only FFmpeg.
 Run:  python -m unittest discover -s tests -v
 """
