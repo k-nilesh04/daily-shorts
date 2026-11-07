@@ -10,7 +10,7 @@ from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
-NARRATION_OVERRUN_TOLERANCE_SECONDS = 2
+NARRATION_OVERRUN_TOLERANCE_SECONDS = 0
 NARRATION_UNDERRUN_TOLERANCE_RATIO = 0.15
 NARRATION_UNDERRUN_TOLERANCE_MIN_SECONDS = 3
 MAX_SHORT_SECONDS = 60
@@ -98,17 +98,35 @@ def main() -> int:
             _validate_narration_duration(duration, cfg.target_seconds)
             break
         except RuntimeError as error:
-            if attempt == MAX_SCRIPT_ATTEMPTS - 1:
-                raise
             word_count = len(meta["script"].split())
             measured = word_count / duration if duration > 0 else words_per_second
             measured = min(MAX_WORDS_PER_SECOND, max(MIN_WORDS_PER_SECOND, measured))
-            # If narration was too long, speak fewer words next time; if too
-            # short, speak more. Nudge toward the measured rate.
+            if attempt == MAX_SCRIPT_ATTEMPTS - 1:
+                # Last resort: hard-trim the script to the number of words that
+                # fit at the measured rate with a 10% safety margin, then
+                # re-synthesize once more before giving up.
+                target_words = max(1, int(cfg.target_seconds * measured * 0.9))
+                trimmed_script = " ".join(meta["script"].split()[:target_words])
+                if trimmed_script and trimmed_script != meta["script"]:
+                    log.warning(
+                        "Hard-trimming script from %d to %d words to force a "
+                        "%ds-or-shorter narration.", word_count, target_words,
+                        cfg.target_seconds)
+                    try:
+                        duration, words = tts.synthesize(cfg, trimmed_script, voice)
+                        meta["script"] = trimmed_script
+                        last_duration = duration
+                        _validate_narration_duration(duration, cfg.target_seconds)
+                        break
+                    except RuntimeError:
+                        pass
+                raise
+            # Aggressive correction: target ~85% of the measured words so the
+            # next narration lands comfortably under the limit.
             if duration > cfg.target_seconds:
-                words_per_second = max(MIN_WORDS_PER_SECOND, measured * 0.9)
+                words_per_second = max(MIN_WORDS_PER_SECOND, measured * 0.85)
             else:
-                words_per_second = min(MAX_WORDS_PER_SECOND, measured * 1.1)
+                words_per_second = min(MAX_WORDS_PER_SECOND, measured * 1.15)
             log.warning(
                 "Narration is %.1fs for %d words (%.2f words/s); regenerating "
                 "with %.2f words/s (attempt %d/%d): %s",
@@ -117,7 +135,8 @@ def main() -> int:
             )
     else:
         # Loop exhausted without break: validate the last measurement to raise.
-        _validate_narration_duration(last_duration, cfg.target_seconds)
+        if last_duration is not None:
+            _validate_narration_duration(last_duration, cfg.target_seconds)
 
     # 3. Generate the configured video asset(s).
     is_json2video = cfg.video_provider == "json2video"

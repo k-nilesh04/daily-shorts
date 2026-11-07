@@ -19,11 +19,12 @@ class NarrationDurationTests(unittest.TestCase):
     def test_narration_at_requested_duration_is_accepted(self):
         _validate_narration_duration(45, 45)
 
-    def test_small_tts_overrun_is_accepted_within_scene_duration(self):
-        _validate_narration_duration(45.8, 45)
+    def test_small_tts_overrun_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*45s"):
+            _validate_narration_duration(45.8, 45)
 
-    def test_overrun_beyond_tolerance_is_rejected(self):
-        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*47s"):
+    def test_overrun_beyond_limit_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*45s"):
             _validate_narration_duration(47.1, 45)
 
     def test_narration_never_exceeds_youtube_shorts_limit(self):
