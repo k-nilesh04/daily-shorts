@@ -1,0 +1,76 @@
+name: Daily Video
+
+on:
+  schedule:
+    - cron: "30 3 * * *"        # 03:30 UTC = 09:00 IST. GitHub may start it 5-20 min late.
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload to YouTube? (false = render only, saved as artifact)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write                # needed to commit data/history.json
+
+concurrency:
+  group: daily-video
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: System packages (FFmpeg + fonts)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-noto-core
+
+      - run: pip install -r requirements.txt
+
+      - name: Offline smoke test
+        run: python -m unittest discover -s tests
+
+      - name: Generate video
+        env:
+          UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == true }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          OMNI_API_KEY: ${{ secrets.OMNI_API_KEY }}
+          USE_OMNI: ${{ vars.USE_OMNI }}
+          NICHE: ${{ vars.NICHE }}
+          LANGUAGE: ${{ vars.LANGUAGE }}
+          TTS_VOICE: ${{ vars.TTS_VOICE }}
+          TARGET_SECONDS: ${{ vars.TARGET_SECONDS }}
+          PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: python -m src.main
+
+      - name: Save video + metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_number }}
+          path: |
+            output/video.mp4
+            output/meta.json
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Commit topic history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/history.json
+          git diff --staged --quiet || (git commit -m "chore: update topic history" && git push)
