@@ -17,7 +17,7 @@ class VideoGenerationTests(unittest.TestCase):
 
     @patch("src.video_gen.genai.Client")
     def test_budget_guard_rejects_before_calling_provider(self, client_factory):
-        cfg = Config(target_seconds=60, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=60, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         prompts = ["scene 1", "scene 2", "scene 3", "scene 4"]
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaisesRegex(RuntimeError, "Refusing paid AI video generation"):
@@ -26,7 +26,7 @@ class VideoGenerationTests(unittest.TestCase):
 
     @patch("src.video_gen.genai.Client")
     def test_generates_scene_files_sequentially(self, client_factory):
-        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=45, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         payload = base64.b64encode(b"fake mp4 data").decode("ascii")
         client = client_factory.return_value
         client.interactions.create.return_value = SimpleNamespace(
@@ -71,7 +71,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
     def test_polls_until_interaction_has_video(self, client_factory, sleep):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         pending = SimpleNamespace(id="interaction-1", status="in_progress")
         payload = base64.b64encode(b"fake mp4 data").decode("ascii")
         ready = SimpleNamespace(
@@ -93,7 +93,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.monotonic", side_effect=[0, 0, 1])
     @patch("src.video_gen.genai.Client")
     def test_polling_stops_at_generation_deadline(self, client_factory, _monotonic):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         client = client_factory.return_value
         client.interactions.create.return_value = SimpleNamespace(
             id="interaction-1", status="in_progress")
@@ -109,7 +109,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
     def test_retries_rate_limited_scene_with_backoff(self, client_factory, sleep):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         client = client_factory.return_value
         rate_limited = errors.ClientError(
             429, {"error": {"message": "rate exceeded", "status": "RESOURCE_EXHAUSTED"}})
@@ -127,7 +127,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
     def test_honors_provider_retry_delay(self, client_factory, sleep):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         client = client_factory.return_value
         rate_limited = errors.ClientError(
             429,
@@ -153,7 +153,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
     def test_caps_provider_retry_delay(self, client_factory, sleep):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         client = client_factory.return_value
         client.interactions.create.side_effect = errors.ClientError(
             429,
@@ -176,7 +176,7 @@ class VideoGenerationTests(unittest.TestCase):
     @patch("src.video_gen.time.sleep")
     @patch("src.video_gen.genai.Client")
     def test_reports_persistent_rate_limit_actionably(self, client_factory, sleep):
-        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25)
+        cfg = Config(target_seconds=30, ai_video_key="test-key", ai_video_max_usd=3.25, dry_run=False)
         client = client_factory.return_value
         client.interactions.create.side_effect = errors.ClientError(
             429, {"error": {"message": "rate exceeded", "status": "RESOURCE_EXHAUSTED"}})
