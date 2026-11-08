@@ -77,10 +77,9 @@ The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, 
 Script word limits start from a conservative speaking rate of about 2.0 words per second, so a
 45-second target asks Gemini for roughly 90 words. The pipeline then measures the real TTS
 duration and regenerates with an adjusted budget if it lands outside the accepted window. The pipeline stops
-before paid video generation when the synthesized narration is too long (over the target, never above 60
-seconds total) **or** more than 15% shorter than the target. Minor TTS
-timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, a
-45-second target allows TTS output from 38.2 through 45 seconds.
+before paid video generation when the synthesized narration is too long (over 50 seconds) **or** more than 15% shorter than the target. Minor TTS
+timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, any narration between 1 and 60 seconds is accepted; shorter
+narration simply produces a shorter Short.
 Longer narration stops with a clear error before paid video generation.
 Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
 `GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default

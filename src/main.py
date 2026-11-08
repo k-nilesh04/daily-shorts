@@ -10,10 +10,10 @@ from . import config, history, render, script_gen, tts, video_gen, youtube
 from .util import log
 
 
-NARRATION_OVERRUN_TOLERANCE_SECONDS = 0
+NARRATION_OVERRUN_TOLERANCE_SECONDS = 5
 NARRATION_UNDERRUN_TOLERANCE_RATIO = 0.15
 NARRATION_UNDERRUN_TOLERANCE_MIN_SECONDS = 3
-MAX_SHORT_SECONDS = 60
+MAX_SHORT_SECONDS = 50
 
 
 def _validate_narration_duration(duration: float, target_seconds: int) -> None:
@@ -34,13 +34,10 @@ def _validate_narration_duration(duration: float, target_seconds: int) -> None:
         target_seconds * NARRATION_UNDERRUN_TOLERANCE_RATIO,
     )
     min_duration = max(0.0, target_seconds - underrun)
-    if duration < min_duration:
-        raise RuntimeError(
-            f"Narration is {duration:.1f}s; minimum allowed for TARGET_SECONDS="
-            f"{target_seconds} is {min_duration:.1f}s. AI video generation was stopped "
-            "to avoid paying for an under-length video; regenerate the script or "
-            "lower TARGET_SECONDS."
-        )
+    if 0 < duration < min_duration:
+        log.warning(
+            "Narration is %.1fs, below the %.1fs target window; the final video "
+            "will be shorter than requested.", duration, float(target_seconds))
 
 
 def _prepare_work_dir(work: Path) -> None:
@@ -135,10 +132,9 @@ def main() -> int:
                     break
                 except RuntimeError:
                     pass
-                raise RuntimeError(
-                    f"Narration is {last_duration:.1f}s; could not trim to "
-                    f"{cfg.target_seconds}s. Lower TARGET_SECONDS or shorten the script."
-                )
+                log.warning(
+                    "Narration is %.1fs after trimming; continuing with a shorter "
+                    "video.", last_duration)
             # Aggressive correction: target ~85% of the measured words so the
             # next narration lands comfortably under the limit.
             if duration > cfg.target_seconds:

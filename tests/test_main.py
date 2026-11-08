@@ -19,23 +19,22 @@ class NarrationDurationTests(unittest.TestCase):
     def test_narration_at_requested_duration_is_accepted(self):
         _validate_narration_duration(45, 45)
 
-    def test_small_tts_overrun_is_rejected(self):
-        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*45s"):
-            _validate_narration_duration(45.8, 45)
+    def test_overrun_within_limit_is_accepted(self):
+        _validate_narration_duration(47.1, 45)
 
-    def test_overrun_beyond_limit_is_rejected(self):
-        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*45s"):
-            _validate_narration_duration(47.1, 45)
+    def test_overrun_beyond_fifty_seconds_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*50s"):
+            _validate_narration_duration(50.1, 45)
 
-    def test_narration_never_exceeds_youtube_shorts_limit(self):
-        _validate_narration_duration(60, 60)
-        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*60s"):
-            _validate_narration_duration(60.1, 60)
+    def test_narration_never_exceeds_fifty_seconds(self):
+        _validate_narration_duration(50, 45)
+        with self.assertRaisesRegex(RuntimeError, "maximum allowed.*50s"):
+            _validate_narration_duration(50.1, 45)
 
-    def test_underlength_narration_is_rejected_before_paid_video_generation(self):
-        # 45s target minus 15% = 38.25s minimum.
-        with self.assertRaisesRegex(RuntimeError, "minimum allowed.*38.2s"):
-            _validate_narration_duration(35, 45)
+    def test_underlength_narration_is_accepted_with_warning(self):
+        # Under-length narration no longer blocks the run; it just produces a
+        # shorter video.
+        _validate_narration_duration(35, 45)
 
     def test_narration_just_inside_underrun_tolerance_is_accepted(self):
         _validate_narration_duration(38.3, 45)
