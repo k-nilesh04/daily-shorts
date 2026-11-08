@@ -25,7 +25,7 @@ class Config:
     tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "hi-IN-MadhurNeural"))
     tts_rate: str = field(default_factory=lambda: _env("TTS_RATE", "+0%"))
     target_seconds: int = field(default_factory=lambda: int(_env("TARGET_SECONDS", "45")))
-    gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-2.5-flash"))
+    gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-3.1-flash-lite"))
 
     # video
     width: int = 1080

@@ -8,6 +8,13 @@ from src.config import Config
 
 
 class ConfigValidationTests(unittest.TestCase):
+    def test_gemini_model_defaults_to_flash_lite_and_can_be_overridden(self):
+        with patch.dict(os.environ, {"GEMINI_MODEL": ""}):
+            self.assertEqual(Config().gemini_model, "gemini-3.1-flash-lite")
+
+        with patch.dict(os.environ, {"GEMINI_MODEL": "custom-model"}):
+            self.assertEqual(Config().gemini_model, "custom-model")
+
     def test_target_seconds_outside_30_60_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "TARGET_SECONDS"):
             Config(target_seconds=29)

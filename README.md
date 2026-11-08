@@ -3,7 +3,7 @@
 Automated 30–60 second 3D AI animated comedy & storytelling YouTube Shorts, rendered locally or on GitHub Actions.
 
 ```
-Gemini (comedy story + polished 3D-cartoon scene prompts) → edge-tts (Hinglish narration + word timings)
+Gemini 3.1 Flash-Lite (comedy story + polished 3D-cartoon scene prompts) → edge-tts (Hinglish narration + word timings)
   → Gemini Omni Flash (matching 15-second 3D cartoon video scenes, generated sequentially)
   → FFmpeg (fullscreen 9:16 vertical video + animated karaoke subtitles)
   → optional YouTube upload (Comedy category) → topic history
@@ -81,8 +81,10 @@ before paid video generation when the synthesized narration is too long (over 50
 timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, any narration between 1 and 60 seconds is accepted; shorter
 narration simply produces a shorter Short.
 Longer narration stops with a clear error before paid video generation.
-Set repository variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), `NICHE`, and
-`GEMINI_MODEL` to customize them. Videos longer than 45 seconds are blocked by the default
+The story and metadata use `gemini-3.1-flash-lite` by default. Set `GEMINI_MODEL` in `.env` or as a
+repository Actions variable to choose another supported text-generation model. Set repository
+variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), and `NICHE` to customize them.
+Videos longer than 45 seconds are blocked by the default
 $3.25 estimated-cost limit; increase that variable only if you approve the higher spend.
 
 ### 3. Optional YouTube upload
