@@ -131,10 +131,24 @@ def verify(cfg: Config) -> str:
             "https://www.googleapis.com/auth/youtube.upload as a scope."
         )
 
+    # The upload scope alone does not grant read access to channels, so a
+    # channels().list(mine=True) call can fail with insufficientPermissions
+    # even for a perfectly valid upload token. Treat that as a non-fatal
+    # warning and only fail on errors that actually block uploads.
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
     try:
         response = yt.channels().list(part="snippet", mine=True).execute()
     except HttpError as error:
+        status = getattr(getattr(error, "resp", None), "status", None)
+        content = getattr(error, "content", b"") or b""
+        text = (content.decode("utf-8", "ignore") + " " + str(error)).lower()
+        if status == 403 and "insufficient" in text:
+            log.warning(
+                "Token is valid for uploads but lacks a read scope, so the "
+                "channel name could not be verified. This does not block "
+                "uploading."
+            )
+            return "(upload scope verified)"
         raise RuntimeError(_http_error_message(error)) from error
     items = response.get("items") or []
     if not items:

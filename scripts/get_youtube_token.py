@@ -11,7 +11,11 @@ import sys
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+# Upload is required; readonly lets the helper verify the channel name.
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 
 if len(sys.argv) != 2:
     sys.exit(__doc__)

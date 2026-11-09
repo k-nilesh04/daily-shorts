@@ -95,6 +95,10 @@ $3.25 estimated-cost limit; increase that variable only if you approve the highe
 1. In Google Cloud Console, enable **YouTube Data API v3**.
 2. Configure the OAuth consent screen and create an OAuth client ID for a Desktop app.
 3. Run `python scripts/get_youtube_token.py client_secret.json` locally with the channel account.
+   The script requests the `youtube.upload` scope (plus `youtube.readonly` for
+   verification) and prints the granted scopes — confirm `youtube.upload` is there.
+   If it is missing, add `https://www.googleapis.com/auth/youtube.upload` to the
+   OAuth consent screen's scopes in Google Cloud Console and re-run.
 4. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository Actions secrets.
 5. Test using **Run workflow** with `upload = true`. Uploads are private by default.
    The workflow refreshes the token and confirms channel access **before** paid video generation,
