@@ -2,6 +2,7 @@
 import time
 from pathlib import Path
 
+import requests
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -37,6 +38,23 @@ def _credentials(cfg: Config) -> Credentials:
     )
 
 
+def _granted_scopes(creds: Credentials) -> list[str]:
+    """Return the scopes Google actually granted for this access token."""
+    try:
+        response = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": creds.token},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return []
+        payload = response.json()
+        scope = payload.get("scope", "")
+        return [item for item in str(scope).split() if item]
+    except (requests.RequestException, ValueError):
+        return []
+
+
 def _refresh_error_message(error: Exception) -> str:
     text = str(error)
     lowered = text.lower()
@@ -63,6 +81,17 @@ def _refresh_error_message(error: Exception) -> str:
 def _http_error_message(error: HttpError) -> str:
     status = getattr(getattr(error, "resp", None), "status", None)
     if status == 403:
+        content = getattr(error, "content", b"") or b""
+        text = content.decode("utf-8", "ignore").lower()
+        if "insufficient" in text or "insufficient" in str(error).lower():
+            return (
+                "YouTube rejected the token because it lacks the youtube.upload scope "
+                "(insufficientPermissions). Re-run "
+                "`python scripts/get_youtube_token.py client_secret.json` with the same "
+                "Desktop OAuth client and replace YT_REFRESH_TOKEN. Make sure the OAuth "
+                "consent screen lists the https://www.googleapis.com/auth/youtube.upload "
+                "scope."
+            )
         return (
             "YouTube upload permission denied (HTTP 403). Enable the YouTube Data API v3 "
             "in the Google Cloud project, add the channel account as an OAuth test user, "
@@ -90,6 +119,18 @@ def verify(cfg: Config) -> str:
         creds.refresh(Request())
     except RefreshError as error:
         raise RuntimeError(_refresh_error_message(error)) from error
+
+    granted = _granted_scopes(creds)
+    if granted and "https://www.googleapis.com/auth/youtube.upload" not in granted:
+        raise RuntimeError(
+            "The refresh token does not include the youtube.upload scope. "
+            f"Granted scopes: {', '.join(granted) or '(none)'}. Re-run "
+            "`python scripts/get_youtube_token.py client_secret.json` with the "
+            "same Desktop OAuth client and replace YT_REFRESH_TOKEN. Also make "
+            "sure the OAuth consent screen lists "
+            "https://www.googleapis.com/auth/youtube.upload as a scope."
+        )
+
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
     try:
         response = yt.channels().list(part="snippet", mine=True).execute()

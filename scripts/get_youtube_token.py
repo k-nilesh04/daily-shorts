@@ -19,9 +19,16 @@ if len(sys.argv) != 2:
 flow = InstalledAppFlow.from_client_secrets_file(sys.argv[1], SCOPES)
 creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
 
+# Confirm the granted scopes include the upload scope.
+granted = getattr(creds, "scopes", None) or SCOPES
+print("Granted scopes:", ", ".join(granted))
+
 info = json.load(open(sys.argv[1]))
 client = info.get("installed") or info.get("web")
 print("\nAdd these as GitHub secrets:\n")
 print("YT_CLIENT_ID     =", client["client_id"])
 print("YT_CLIENT_SECRET =", client["client_secret"])
 print("YT_REFRESH_TOKEN =", creds.refresh_token)
+print("\nIf 'granted scopes' above does NOT include youtube.upload, the OAuth")
+print("consent screen is missing that scope. Add it in Google Cloud Console ->")
+print("APIs & Services -> OAuth consent screen -> Scopes, then re-run this script.")
