@@ -15,6 +15,13 @@ class ConfigValidationTests(unittest.TestCase):
         with patch.dict(os.environ, {"GEMINI_MODEL": "custom-model"}):
             self.assertEqual(Config().gemini_model, "custom-model")
 
+    def test_omni_video_model_defaults_and_can_be_overridden(self):
+        with patch.dict(os.environ, {"OMNI_MODEL": ""}):
+            self.assertEqual(Config().omni_model, "gemini-omni-1.2-flash")
+
+        with patch.dict(os.environ, {"OMNI_MODEL": "custom-video-model"}):
+            self.assertEqual(Config().omni_model, "custom-video-model")
+
     def test_target_seconds_outside_30_60_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "TARGET_SECONDS"):
             Config(target_seconds=29)

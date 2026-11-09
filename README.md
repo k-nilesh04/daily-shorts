@@ -24,9 +24,11 @@ exceeds that limit, so the default supports up to 45 seconds. This is an applica
 alert (for example, $100/month) and review actual usage. At one 45-second generation per day,
 expected video-generation cost is about **$94.50 per 30 days**. Local runs use paid video generation by default unless `DRY_RUN=true`; Actions render-only runs
 automatically use dry-run mode. Generation is sequential with bounded
-backoff retries for HTTP 429; repeated 429 errors can still mean the project's model quota, usage
-tier, or billing limit needs attention. Check the project's active limits in
-[AI Studio](https://aistudio.google.com/rate-limit).
+backoff retries for HTTP 429 and for transient HTTP 5xx/connection errors; repeated 429 errors can
+still mean the project's model quota, usage tier, or billing limit needs attention. Check the
+project's active limits in [AI Studio](https://aistudio.google.com/rate-limit). Set `OMNI_MODEL` to
+override the video model (default `gemini-omni-1.2-flash`); invalid keys, disabled APIs, and unknown
+models now fail with an actionable message.
 Provider retry delays and exponential backoff are capped at 120 seconds per retry. A quota or
 billing block must be resolved in the Google project; waiting and retrying cannot increase the
 available quota.
@@ -34,9 +36,10 @@ Video-generation requests use bounded retries and polling, with a 25-minute maxi
 across all scenes. The Actions job is limited to 40 minutes.
 
 To render through JSON2Video instead, set `VIDEO_PROVIDER=json2video` explicitly and provide
-`JSON2VIDEO_API_KEY` and `JSON2VIDEO_IMAGE_URL`. This uses JSON2Video's image-and-text movie API:
-it renders the configured still image with the generated title, then this project adds narration
-and captions. It does **not** turn the scene prompts into AI-generated animation. Adding only
+`JSON2VIDEO_API_KEY` and `JSON2VIDEO_IMAGE_URL`. This uses JSON2Video's movie API: it renders the
+configured still image as the background, then this project adds narration and captions. No fixed
+title or header text is burned in. It does **not** turn the scene prompts into AI-generated
+animation. Adding only
 `JSON2VIDEO_API_KEY` does not change providers; Gemini remains the default. There is no fallback
 image, so a missing `JSON2VIDEO_IMAGE_URL` stops the run instead of publishing an off-brand video.
 JSON2Video plan quotas and credits apply; the Gemini cost estimate does not cover JSON2Video.
@@ -76,11 +79,11 @@ needed for generating the story and metadata.
 The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
 Script word limits start from a conservative speaking rate of about 2.0 words per second, so a
 45-second target asks Gemini for roughly 90 words. The pipeline then measures the real TTS
-duration and regenerates with an adjusted budget if it lands outside the accepted window. The pipeline stops
-before paid video generation when the synthesized narration is too long (over 50 seconds) **or** more than 15% shorter than the target. Minor TTS
-timing variation is allowed; the renderer loops clips to cover a small overrun. In particular, any narration between 1 and 60 seconds is accepted; shorter
-narration simply produces a shorter Short.
-Longer narration stops with a clear error before paid video generation.
+duration and regenerates with an adjusted budget if it lands outside the accepted window. Any
+narration between 1 and 50 seconds is accepted; shorter narration simply produces a shorter Short.
+If narration is still too long after the retries, the pipeline trims the audio and captions to the
+target length so the run completes instead of aborting before paid video generation. Minor TTS
+timing variation is allowed; the renderer loops clips to cover a small overrun.
 The story and metadata use `gemini-3.1-flash-lite` by default. Set `GEMINI_MODEL` in `.env` or as a
 repository Actions variable to choose another supported text-generation model. Set repository
 variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), and `NICHE` to customize them.
@@ -94,6 +97,10 @@ $3.25 estimated-cost limit; increase that variable only if you approve the highe
 3. Run `python scripts/get_youtube_token.py client_secret.json` locally with the channel account.
 4. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository Actions secrets.
 5. Test using **Run workflow** with `upload = true`. Uploads are private by default.
+   The workflow refreshes the token and confirms channel access **before** paid video generation,
+   so an expired/revoked refresh token or missing YouTube Data API fails fast with instructions.
+   While the OAuth consent screen is in **Testing** mode, Google expires refresh tokens after 7
+   days; publish the app or re-run `scripts/get_youtube_token.py` when that happens.
 
 Scheduled runs upload automatically once all three YouTube secrets are configured. Until then,
 scheduled runs produce a dry-run artifact rather than failing on missing upload credentials or
@@ -139,7 +146,8 @@ generation through the Interactions API. This project requests 15-second, 720p, 
 adds its own narration and captions.
 
 JSON2Video uses its [movie API](https://json2video.com/docs/v2/getting-started/quickstart) to
-render a vertical still-image/title clip when selected with `VIDEO_PROVIDER=json2video`.
+render a vertical still-image background when selected with `VIDEO_PROVIDER=json2video`; captions
+are added by this project, so the video contains no fixed title text.
 
 ## Reference links
 

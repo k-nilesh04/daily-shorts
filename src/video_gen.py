@@ -7,6 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import httpx
 import requests
 from google import genai
 from google.genai import errors, types
@@ -14,6 +15,7 @@ from google.genai import errors, types
 from .config import Config
 from .util import log
 
+# Kept as the documented default; Config.omni_model (OMNI_MODEL) overrides it.
 MODEL = "gemini-omni-1.2-flash"
 JSON2VIDEO_MODEL = "JSON2Video image-and-text render"
 MAX_CLIP_SECONDS = 15
@@ -67,6 +69,40 @@ def estimate_cost_usd(scene_count: int) -> float:
     return scene_count * MAX_CLIP_SECONDS * ESTIMATED_USD_PER_SECOND_720P
 
 
+def _backoff_seconds(attempt: int) -> float:
+    return min(
+        RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** attempt),
+        MAX_RATE_LIMIT_RETRY_DELAY_SECONDS,
+    )
+
+
+def _retry_wait(error: errors.APIError | None, attempt: int) -> float:
+    wait = _backoff_seconds(attempt)
+    if error is not None:
+        retry_after = _retry_after_seconds(error)
+        if retry_after is not None:
+            wait = max(wait, retry_after)
+    return min(wait, MAX_RATE_LIMIT_RETRY_DELAY_SECONDS)
+
+
+def _auth_error(error: errors.APIError) -> RuntimeError:
+    return RuntimeError(
+        f"Gemini rejected the video API request (HTTP {error.code}: {error.message}). "
+        "Check that OMNI_API_KEY/GEMINI_API_KEY is valid, that the Generative Language "
+        "API is enabled in the key's Google Cloud project, and that the project has "
+        "paid-tier billing enabled for video generation."
+    )
+
+
+def _model_error(cfg: Config, error: errors.APIError) -> RuntimeError:
+    model = getattr(cfg, "omni_model", MODEL) or MODEL
+    return RuntimeError(
+        f"Gemini video model {model!r} is unavailable (HTTP {error.code}: "
+        f"{error.message}). Set OMNI_MODEL to a supported video model "
+        "(see https://ai.google.dev/gemini-api/docs/video)."
+    )
+
+
 def _generate_one(
     cfg: Config, prompt: str, dest: Path, scene_number: int, deadline: float,
 ) -> Path:
@@ -74,17 +110,18 @@ def _generate_one(
         api_key=cfg.ai_video_key,
         http_options=types.HttpOptions(api_version="v1beta"),
     )
+    model = getattr(cfg, "omni_model", MODEL) or MODEL
     try:
         for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Gemini video generation exceeded its "
+                    f"{MAX_GENERATION_WAIT_SECONDS}-second time limit."
+                )
             try:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError(
-                        f"Gemini video generation exceeded its "
-                        f"{MAX_GENERATION_WAIT_SECONDS}-second time limit."
-                    )
                 interaction = client.interactions.create(
-                    model=MODEL,
+                    model=model,
                     input=(
                         "Create one 15-second cinematic 3D cartoon animated video, portrait orientation. "
                         f"Visual brief: {prompt.strip()} "
@@ -101,29 +138,64 @@ def _generate_one(
                 )
                 break
             except errors.APIError as error:
-                if error.code != 429:
-                    raise
-                if attempt == MAX_RATE_LIMIT_RETRIES:
+                if error.code in (401, 403):
+                    raise _auth_error(error) from error
+                if error.code == 404:
+                    raise _model_error(cfg, error) from error
+                retryable = error.code == 429 or (
+                    isinstance(error.code, int) and 500 <= error.code < 600)
+                if not retryable:
                     raise RuntimeError(
-                        f"Gemini video generation for scene {scene_number} was rate-limited "
-                        f"after {attempt + 1} attempts (HTTP 429: {error.message}). "
-                        "Check the project's Gemini "
-                        "Omni rate limits, usage tier, and billing in AI Studio."
+                        f"Gemini video generation failed for scene {scene_number} "
+                        f"(HTTP {error.code}: {error.message})."
                     ) from error
-                wait = RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** attempt)
-                retry_after = _retry_after_seconds(error)
-                if retry_after is not None:
-                    wait = max(wait, retry_after)
-                wait = min(wait, MAX_RATE_LIMIT_RETRY_DELAY_SECONDS)
+                if attempt == MAX_RATE_LIMIT_RETRIES:
+                    if error.code == 429:
+                        raise RuntimeError(
+                            f"Gemini video generation for scene {scene_number} was rate-limited "
+                            f"after {attempt + 1} attempts (HTTP 429: {error.message}). "
+                            "Check the project's Gemini Omni rate limits, usage tier, and billing "
+                            "at https://aistudio.google.com/rate-limit. Consider switching to "
+                            "VIDEO_PROVIDER=json2video to avoid Gemini video rate limits."
+                        ) from error
+                    raise RuntimeError(
+                        f"Gemini video generation for scene {scene_number} failed after "
+                        f"{attempt + 1} attempts (HTTP {error.code}: {error.message}). "
+                        "The provider may be temporarily unavailable; retry later."
+                    ) from error
+                wait = _retry_wait(error, attempt)
                 remaining = deadline - time.monotonic()
                 if wait >= remaining:
                     raise TimeoutError(
                         f"Gemini video generation for scene {scene_number} ran out of "
-                        "time while waiting to retry after HTTP 429."
+                        f"time while waiting to retry after HTTP {error.code}."
                     ) from error
                 log.warning(
-                    "Scene %d rate-limited by Gemini (HTTP 429). Retry %d/%d in %.1fs",
-                    scene_number, attempt + 1, MAX_RATE_LIMIT_RETRIES, wait,
+                    "Scene %d failed with HTTP %d from Gemini. Retry %d/%d in %.1fs",
+                    scene_number, error.code, attempt + 1,
+                    MAX_RATE_LIMIT_RETRIES, wait,
+                )
+                time.sleep(wait)
+            except (httpx.TransportError, ConnectionError, TimeoutError) as error:
+                # Connection resets, DNS failures, and provider timeouts are
+                # transient. Retry with the same bounded backoff instead of
+                # failing the whole (already paid) run.
+                if attempt == MAX_RATE_LIMIT_RETRIES:
+                    raise RuntimeError(
+                        f"Could not reach the Gemini video API for scene {scene_number} "
+                        f"after {attempt + 1} attempts: {error}. Check the runner's "
+                        "network/egress and retry later."
+                    ) from error
+                wait = _backoff_seconds(attempt)
+                remaining = deadline - time.monotonic()
+                if wait >= remaining:
+                    raise TimeoutError(
+                        f"Gemini video generation for scene {scene_number} ran out of "
+                        "time while retrying a network error."
+                    ) from error
+                log.warning(
+                    "Scene %d connection error from Gemini (%s). Retry %d/%d in %.1fs",
+                    scene_number, error, attempt + 1, MAX_RATE_LIMIT_RETRIES, wait,
                 )
                 time.sleep(wait)
 
@@ -223,32 +295,81 @@ def _generate_placeholders(prompts: list[str], work: Path) -> list[Path]:
     return paths
 
 
-def _generate_json2video(
-    cfg: Config, work: Path, text: str,
-) -> list[Path]:
+def _json2video_http_error(
+    error: requests.exceptions.HTTPError,
+) -> RuntimeError:
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    detail = ""
+    if response is not None:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = str(payload.get("message") or payload.get("error") or "")
+        if not detail:
+            detail = (getattr(response, "text", "") or "").strip()[:300]
+    if status in (401, 403):
+        return RuntimeError(
+            f"JSON2Video rejected the API key (HTTP {status}). Check JSON2VIDEO_API_KEY."
+        )
+    if status == 429:
+        return RuntimeError(
+            "JSON2Video rate limit or render credits exhausted (HTTP 429). "
+            "Check the plan quota at https://json2video.com/."
+        )
+    suffix = f": {detail}" if detail else ""
+    return RuntimeError(f"JSON2Video API error (HTTP {status}){suffix}")
+
+
+def _generate_json2video(cfg: Config, work: Path) -> list[Path]:
     if not cfg.json2video_key:
         raise RuntimeError("JSON2VIDEO_API_KEY is required when VIDEO_PROVIDER=json2video")
     if not cfg.json2video_image_url:
         raise RuntimeError("JSON2VIDEO_IMAGE_URL must be a publicly accessible image URL")
 
+    # Only the background image is rendered here. All on-screen text comes from
+    # the caption track added by FFmpeg, so no fixed title/overlay is burned in.
     movie = {
         "resolution": JSON2VIDEO_RESOLUTION,
         "scenes": [{
             "duration": cfg.target_seconds,
             "elements": [
                 {"type": "image", "src": cfg.json2video_image_url},
-                {"type": "text", "text": text, "style": "001"},
             ],
         }],
     }
     headers = {"x-api-key": cfg.json2video_key}
-    response = requests.post(
-        JSON2VIDEO_API_URL,
-        headers=headers,
-        json=movie,
-        timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                JSON2VIDEO_API_URL,
+                headers=headers,
+                json=movie,
+                timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            break
+        except requests.exceptions.ConnectionError as error:
+            if attempt == 2:
+                raise RuntimeError(
+                    "Could not connect to JSON2Video API. Check your network "
+                    "connection and JSON2VIDEO_API_KEY.") from error
+            log.warning("JSON2Video connection failed (%s). Retry %d/3 in 5s",
+                        error, attempt + 1)
+            time.sleep(5)
+        except requests.exceptions.Timeout as error:
+            if attempt == 2:
+                raise RuntimeError(
+                    "JSON2Video API timed out. Try again later.") from error
+            log.warning("JSON2Video request timed out. Retry %d/3 in 5s",
+                        attempt + 1)
+            time.sleep(5)
+        except requests.exceptions.HTTPError as error:
+            raise _json2video_http_error(error) from error
+    else:
+        raise RuntimeError("JSON2Video request failed after 3 attempts")
     project = response.json().get("project")
     if not isinstance(project, str) or not project:
         raise RuntimeError("JSON2Video response did not contain a project ID")
@@ -261,13 +382,20 @@ def _generate_json2video(
                 f"JSON2Video project {project} did not finish within "
                 f"{JSON2VIDEO_MAX_WAIT_SECONDS} seconds"
             )
-        status_response = requests.get(
-            JSON2VIDEO_API_URL,
-            headers=headers,
-            params={"project": project},
-            timeout=min(JSON2VIDEO_REQUEST_TIMEOUT_SECONDS, remaining),
-        )
-        status_response.raise_for_status()
+        try:
+            status_response = requests.get(
+                JSON2VIDEO_API_URL,
+                headers=headers,
+                params={"project": project},
+                timeout=min(JSON2VIDEO_REQUEST_TIMEOUT_SECONDS, remaining),
+            )
+            status_response.raise_for_status()
+        except requests.exceptions.HTTPError as error:
+            raise _json2video_http_error(error) from error
+        except requests.exceptions.RequestException as error:
+            raise RuntimeError(
+                f"Lost connection to JSON2Video while checking project {project}: "
+                f"{error}. Retry later.") from error
         movie_status = status_response.json().get("movie")
         if not isinstance(movie_status, dict):
             raise RuntimeError("JSON2Video status response did not contain a movie")
@@ -277,9 +405,16 @@ def _generate_json2video(
             video_url = movie_status.get("url")
             if not isinstance(video_url, str) or not video_url:
                 raise RuntimeError("JSON2Video completed without returning a video URL")
-            video_response = requests.get(
-                video_url, timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS)
-            video_response.raise_for_status()
+            try:
+                video_response = requests.get(
+                    video_url, timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS)
+                video_response.raise_for_status()
+            except requests.exceptions.HTTPError as error:
+                raise _json2video_http_error(error) from error
+            except requests.exceptions.RequestException as error:
+                raise RuntimeError(
+                    f"Could not download the rendered JSON2Video file: {error}. "
+                    "Retry later.") from error
             if not video_response.content:
                 raise RuntimeError("JSON2Video returned an empty video")
             dest = work / "scene_01.mp4"
@@ -362,7 +497,7 @@ def generate_scenes(
             _write_manifest(work, cfg, prompts)
             return [dest]
         log.info("Rendering JSON2Video still-image template at %s", JSON2VIDEO_RESOLUTION)
-        result = _generate_json2video(cfg, work, text)
+        result = _generate_json2video(cfg, work)
         _write_manifest(work, cfg, prompts)
         return result
 

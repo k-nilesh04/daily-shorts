@@ -21,9 +21,6 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    env:
-      UPLOAD: ${{ (github.event_name == 'schedule' || inputs.upload == true) && secrets.YT_CLIENT_ID != '' && secrets.YT_CLIENT_SECRET != '' && secrets.YT_REFRESH_TOKEN != '' }}
-      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.upload != true) || (github.event_name == 'schedule' && (secrets.YT_CLIENT_ID == '' || secrets.YT_CLIENT_SECRET == '' || secrets.YT_REFRESH_TOKEN == '')) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -39,21 +36,54 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Offline smoke test
-        env:
-          DRY_RUN: "false"
-        run: python -m unittest discover -s tests
-
-      - name: Check upload credentials before paid generation
-        if: github.event_name == 'workflow_dispatch' && inputs.upload == true
+      - name: Resolve run mode
         env:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          if [ -z "$YT_CLIENT_ID" ] || [ -z "$YT_CLIENT_SECRET" ] || [ -z "$YT_REFRESH_TOKEN" ]; then
-            echo "YouTube upload credentials not found; bypassing upload (render-only mode)."
+          creds=true
+          missing=""
+          for name in YT_CLIENT_ID YT_CLIENT_SECRET YT_REFRESH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              creds=false
+              missing="$missing $name"
+            fi
+          done
+          requested=false
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.upload }}" = "true" ]; then
+            requested=true
           fi
+          echo "CREDS_PRESENT=$creds" >> "$GITHUB_ENV"
+          if [ "$requested" = "true" ] && [ "$creds" = "true" ]; then
+            echo "UPLOAD=true" >> "$GITHUB_ENV"
+            echo "DRY_RUN=false" >> "$GITHUB_ENV"
+          else
+            echo "UPLOAD=false" >> "$GITHUB_ENV"
+            echo "DRY_RUN=true" >> "$GITHUB_ENV"
+          fi
+          if [ "$requested" = "true" ] && [ "$creds" = "false" ]; then
+            echo "::warning::Missing upload secrets:$missing. Upload cannot run."
+          fi
+
+      - name: Offline smoke test
+        env:
+          DRY_RUN: "false"
+        run: python -m unittest discover -s tests
+
+      - name: Check requested upload credentials
+        if: github.event_name == 'workflow_dispatch' && inputs.upload == true && env.CREDS_PRESENT != 'true'
+        run: |
+          echo "::error::Upload was requested, but YT_CLIENT_ID, YT_CLIENT_SECRET, or YT_REFRESH_TOKEN is missing. Add all three as repository Actions secrets under Settings -> Secrets and variables -> Actions."
+          exit 1
+
+      - name: Verify YouTube upload credentials
+        if: env.UPLOAD == 'true'
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python -m src.youtube --verify
 
       - name: Explain scheduled render-only mode
         if: github.event_name == 'schedule' && env.DRY_RUN == 'true'
@@ -78,14 +108,13 @@ jobs:
           TARGET_SECONDS: ${{ vars.TARGET_SECONDS }}
           PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          OMNI_MODEL: ${{ vars.OMNI_MODEL }}
           AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
           LAYOUT: ${{ vars.LAYOUT }}
           SEGMENT_SECONDS: ${{ vars.SEGMENT_SECONDS }}
           CAPTION_FONT: ${{ vars.CAPTION_FONT }}
           CAPTION_SIZE: ${{ vars.CAPTION_SIZE }}
           CAPTION_UPPER: ${{ vars.CAPTION_UPPER }}
-          HEADER_TITLE: ${{ vars.HEADER_TITLE }}
-          HEADER_SUBTITLE: ${{ vars.HEADER_SUBTITLE }}
           YT_CATEGORY_ID: ${{ vars.YT_CATEGORY_ID }}
         run: python -m src.main
 

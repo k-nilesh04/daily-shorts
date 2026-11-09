@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from src.config import Config
 from google.genai import errors
 from src.video_gen import _write_manifest, estimate_cost_usd, generate_scenes
@@ -57,9 +59,10 @@ class VideoGenerationTests(unittest.TestCase):
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["resolution"], "instagram-story")
         self.assertEqual(payload["scenes"][0]["duration"], 30)
+        # Only the background image is rendered; captions are added by FFmpeg,
+        # so no fixed title text is baked into the video.
         self.assertEqual(payload["scenes"][0]["elements"], [
             {"type": "image", "src": "https://example.com/image.jpg"},
-            {"type": "text", "text": "Short title", "style": "001"},
         ])
         self.assertEqual(get.call_count, 3)
         self.assertEqual(get.call_args_list[0].kwargs["params"], {"project": "project-id"})
@@ -85,6 +88,23 @@ class VideoGenerationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "JSON2VIDEO_IMAGE_URL"):
                 generate_scenes(cfg, ["first", "second"], Path(temp_dir))
         post.assert_not_called()
+
+    @patch("src.video_gen.requests.post")
+    def test_json2video_rejects_bad_api_key_actionably(self, post):
+        cfg = Config(
+            target_seconds=30,
+            video_provider="json2video",
+            json2video_key="bad-key",
+            json2video_image_url="https://example.com/image.jpg",
+        )
+        response = MagicMock(status_code=401)
+        response.json.return_value = {"error": "unauthorized"}
+        post.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "401 Client Error", response=response)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "JSON2VIDEO_API_KEY"):
+                generate_scenes(cfg, ["first", "second"], Path(temp_dir))
 
     @patch("src.video_gen.requests.get")
     @patch("src.video_gen.requests.post")
@@ -138,6 +158,48 @@ class VideoGenerationTests(unittest.TestCase):
             self.assertIn("15-second", call.kwargs["input"])
             self.assertNotIn("Pixar", call.kwargs["input"])
             self.assertNotIn("Disney", call.kwargs["input"])
+
+    @patch("src.video_gen.genai.Client")
+    def test_uses_configured_video_model(self, client_factory):
+        cfg = Config(target_seconds=30, ai_video_key="test-key",
+                     ai_video_max_usd=3.25, omni_model="custom-video-model")
+        _ready_client(client_factory)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
+
+        call = client_factory.return_value.interactions.create.call_args_list[0]
+        self.assertEqual(call.kwargs["model"], "custom-video-model")
+
+    @patch("src.video_gen.time.sleep")
+    @patch("src.video_gen.genai.Client")
+    def test_retries_transient_provider_errors(self, client_factory, sleep):
+        cfg = Config(target_seconds=30, ai_video_key="test-key",
+                     ai_video_max_usd=3.25, dry_run=False)
+        client = client_factory.return_value
+        unavailable = errors.ServerError(
+            503, {"error": {"message": "temporarily unavailable", "status": "UNAVAILABLE"}})
+        payload = base64.b64encode(b"fake mp4 data").decode("ascii")
+        response = SimpleNamespace(output_video=SimpleNamespace(data=payload))
+        client.interactions.create.side_effect = [unavailable, response, response]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
+
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(client.interactions.create.call_count, 3)
+        sleep.assert_called_once_with(30)
+
+    @patch("src.video_gen.genai.Client")
+    def test_reports_invalid_model_actionably(self, client_factory):
+        cfg = Config(target_seconds=30, ai_video_key="test-key",
+                     ai_video_max_usd=3.25, omni_model="no-such-model")
+        client_factory.return_value.interactions.create.side_effect = errors.ClientError(
+            404, {"error": {"message": "model not found", "status": "NOT_FOUND"}})
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "no-such-model.*OMNI_MODEL"):
+                generate_scenes(cfg, ["first scene", "second scene"], Path(temp_dir))
 
     @patch("src.video_gen.genai.Client")
     def test_decodes_base64_with_line_breaks(self, client_factory):

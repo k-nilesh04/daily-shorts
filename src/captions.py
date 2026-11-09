@@ -67,28 +67,9 @@ def write_ass(cfg: Config, words: list[dict], path: Path) -> Path:
     layout = getattr(cfg, "layout", "fullscreen")
     if layout == "frame":
         caption_y = frame_y + frame_size + max(80, (cfg.height - frame_y - frame_size) // 3)
-        title_y = max(80, frame_y // 2)
-        if getattr(cfg, "header_title", ""):
-            lines.append(
-                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
-                f"{{\\an8\\pos({center_x},{title_y})\\fn{cfg.caption_font}\\fs28\\bord0\\shad0"
-                f"\\fsp7\\c&H00FFD700&}}{cfg.header_title}\n"
-            )
-        if getattr(cfg, "header_subtitle", ""):
-            lines.append(
-                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
-                f"{{\\an8\\pos({center_x},{title_y + 42})\\fn{cfg.caption_font}\\fs18\\bord0\\shad0"
-                f"\\fsp4\\c&H00909090&}}{cfg.header_subtitle}\n"
-            )
     else:
         # Fullscreen 9:16 vertical layout (optimal position above shorts interface)
         caption_y = cfg.height - 480
-        if getattr(cfg, "header_title", ""):
-            lines.append(
-                f"Dialogue: 0,{start},{end},Default,,0,0,0,,"
-                f"{{\\an8\\pos({center_x},100)\\fn{cfg.caption_font}\\fs26\\bord2\\shad1"
-                f"\\fsp4\\c&H0000FFFF&}}{cfg.header_title}\n"
-            )
 
     for g in group_words(words):
         syllables = []

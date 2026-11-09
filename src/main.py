@@ -60,9 +60,24 @@ def main() -> int:
 
     cfg = config.load()
     do_upload = args.upload or cfg.upload
-    if do_upload and not cfg.can_upload:
-        log.warning("YT environment variables (YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN) not found; bypassing upload.")
-        do_upload = False
+    if do_upload:
+        missing = [
+            name for name, value in (
+                ("YT_CLIENT_ID", cfg.yt_client_id),
+                ("YT_CLIENT_SECRET", cfg.yt_client_secret),
+                ("YT_REFRESH_TOKEN", cfg.yt_refresh_token),
+            ) if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                "YouTube upload was requested but these credentials are missing: "
+                f"{', '.join(missing)}. Add them as repository Actions secrets "
+                "(Settings -> Secrets and variables -> Actions) or run without upload."
+            )
+        # Validate the OAuth refresh token before spending money on video
+        # generation. A revoked/expired token now fails here instead of after
+        # the paid render.
+        youtube.verify(cfg)
 
     _prepare_work_dir(cfg.work_dir)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
@@ -160,7 +175,7 @@ def main() -> int:
     )
     meta["video_generation"] = {
         "provider": cfg.video_provider,
-        "model": video_gen.JSON2VIDEO_MODEL if is_json2video else video_gen.MODEL,
+        "model": video_gen.JSON2VIDEO_MODEL if is_json2video else cfg.omni_model,
         "resolution": video_gen.JSON2VIDEO_RESOLUTION if is_json2video else video_gen.RESOLUTION,
         "scene_count": 1 if is_json2video else len(meta["scene_prompts"]),
         "dry_run": cfg.dry_run,

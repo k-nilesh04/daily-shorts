@@ -2,20 +2,32 @@
 import time
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
 
 from .config import Config
 from .util import log
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
+CREDENTIAL_NAMES = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")
 
 
-def upload(cfg: Config, video: Path, meta: dict) -> str:
-    creds = Credentials(
+def missing_credentials(cfg: Config) -> list[str]:
+    values = {
+        "YT_CLIENT_ID": cfg.yt_client_id,
+        "YT_CLIENT_SECRET": cfg.yt_client_secret,
+        "YT_REFRESH_TOKEN": cfg.yt_refresh_token,
+    }
+    return [name for name in CREDENTIAL_NAMES if not values[name]]
+
+
+def _credentials(cfg: Config) -> Credentials:
+    return Credentials(
         token=None,
         refresh_token=cfg.yt_refresh_token,
         token_uri=TOKEN_URI,
@@ -23,6 +35,86 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
         client_secret=cfg.yt_client_secret,
         scopes=SCOPES,
     )
+
+
+def _refresh_error_message(error: Exception) -> str:
+    text = str(error)
+    lowered = text.lower()
+    if "invalid_grant" in lowered:
+        return (
+            "YouTube refresh token is expired or revoked (invalid_grant). Re-run "
+            "`python scripts/get_youtube_token.py client_secret.json` and update the "
+            "YT_REFRESH_TOKEN secret. While the OAuth consent screen is in 'Testing' "
+            "mode, Google expires refresh tokens after 7 days."
+        )
+    if "invalid_client" in lowered or "unauthorized_client" in lowered:
+        return (
+            "YouTube OAuth client credentials are invalid (invalid_client). Check that "
+            "YT_CLIENT_ID and YT_CLIENT_SECRET match the Desktop OAuth client used to "
+            "create the refresh token."
+        )
+    return (
+        "Could not refresh the YouTube OAuth token: "
+        f"{text}. Re-run `python scripts/get_youtube_token.py client_secret.json` and "
+        "update the YT_* repository secrets."
+    )
+
+
+def _http_error_message(error: HttpError) -> str:
+    status = getattr(getattr(error, "resp", None), "status", None)
+    if status == 403:
+        return (
+            "YouTube upload permission denied (HTTP 403). Enable the YouTube Data API v3 "
+            "in the Google Cloud project, add the channel account as an OAuth test user, "
+            "and make sure the refresh token was created with the youtube.upload scope."
+        )
+    if status == 401:
+        return (
+            "YouTube rejected the OAuth token (HTTP 401). Re-run "
+            "`python scripts/get_youtube_token.py client_secret.json` and update the "
+            "YT_* repository secrets."
+        )
+    return f"YouTube API error (HTTP {status}): {error}"
+
+
+def verify(cfg: Config) -> str:
+    """Validate the credentials before paid work; returns the channel title."""
+    missing = missing_credentials(cfg)
+    if missing:
+        raise RuntimeError(
+            "Missing YouTube upload credentials: " + ", ".join(missing)
+            + ". Add them as repository Actions secrets."
+        )
+    creds = _credentials(cfg)
+    try:
+        creds.refresh(Request())
+    except RefreshError as error:
+        raise RuntimeError(_refresh_error_message(error)) from error
+    yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    try:
+        response = yt.channels().list(part="snippet", mine=True).execute()
+    except HttpError as error:
+        raise RuntimeError(_http_error_message(error)) from error
+    items = response.get("items") or []
+    if not items:
+        raise RuntimeError(
+            "The YouTube credentials are valid but no channel is associated with that "
+            "Google account. Sign in with the channel owner account when creating the "
+            "refresh token."
+        )
+    title = items[0].get("snippet", {}).get("title") or "(unnamed channel)"
+    log.info("YouTube credentials verified for channel: %s", title)
+    return title
+
+
+def upload(cfg: Config, video: Path, meta: dict) -> str:
+    missing = missing_credentials(cfg)
+    if missing:
+        raise RuntimeError(
+            "Missing YouTube upload credentials: " + ", ".join(missing)
+            + ". Add them as repository Actions secrets."
+        )
+    creds = _credentials(cfg)
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     description = meta["description"]
@@ -55,12 +147,36 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
             status, response = req.next_chunk()
             if status:
                 log.info("Upload %d%%", int(status.progress() * 100))
+        except RefreshError as error:
+            raise RuntimeError(_refresh_error_message(error)) from error
         except HttpError as e:
             if e.resp.status in (500, 502, 503, 504) and attempt < 5:
                 attempt += 1
                 time.sleep(2 ** attempt)
                 continue
-            raise
+            raise RuntimeError(_http_error_message(e)) from e
     vid = response["id"]
     log.info("Uploaded: https://youtu.be/%s (%s)", vid, cfg.privacy_status)
     return vid
+
+
+def _main() -> int:
+    import argparse
+    import logging
+
+    from . import config
+
+    parser = argparse.ArgumentParser(
+        description="Validate YouTube upload credentials without uploading.")
+    parser.add_argument("--verify", action="store_true",
+                        help="refresh the OAuth token and confirm channel access")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if not args.verify:
+        parser.error("nothing to do; pass --verify")
+    verify(config.load())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

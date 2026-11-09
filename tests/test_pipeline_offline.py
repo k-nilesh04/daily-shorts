@@ -102,7 +102,7 @@ class RenderDesignTests(unittest.TestCase):
             content = path.read_text(encoding="utf-8")
         self.assertIn(r"\kf30", content)
         self.assertIn(r"\t(0,130,\fscx100\fscy100)", content)
-        self.assertIn("COMEDY SHORTS", content)
+        self.assertNotIn("COMEDY SHORTS", content)
         self.assertIn(r"\pos(540,1440)", content)
 
 

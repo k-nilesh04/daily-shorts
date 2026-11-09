@@ -63,7 +63,7 @@ class WorkDirectoryTests(unittest.TestCase):
 
 
 class MainPipelineTests(unittest.TestCase):
-    def test_upload_without_credentials_bypasses_upload(self):
+    def test_upload_without_credentials_fails_before_any_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             cfg = Config(
@@ -77,18 +77,44 @@ class MainPipelineTests(unittest.TestCase):
             with patch("src.main.config.load", return_value=cfg), \
                     patch("src.main.argparse.ArgumentParser.parse_args",
                           return_value=SimpleNamespace(upload=False)), \
+                    patch("src.main.script_gen.generate") as generate_mock:
+                with self.assertRaisesRegex(RuntimeError, "YT_CLIENT_ID"):
+                    main()
+
+            generate_mock.assert_not_called()
+            self.assertFalse((root / "output" / "meta.json").exists())
+
+    def test_upload_verifies_credentials_before_paid_generation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            cfg = Config(
+                upload=True,
+                target_seconds=45,
+                dry_run=True,
+                yt_client_id="client-id",
+                yt_client_secret="client-secret",
+                yt_refresh_token="refresh-token",
+                work_dir=root / "work",
+                output_dir=root / "output",
+                history_file=root / "data" / "history.json",
+            )
+            with patch("src.main.config.load", return_value=cfg), \
+                    patch("src.main.argparse.ArgumentParser.parse_args",
+                          return_value=SimpleNamespace(upload=False)), \
+                    patch("src.main.youtube.verify") as verify_mock, \
                     patch("src.main.script_gen.generate",
-                          return_value={"script": "story",
+                          return_value={"script": "story", "topic": "topic",
+                                        "title": "Title", "description": "Description",
                                         "scene_prompts": ["p1", "p2", "p3"]}), \
                     patch("src.main.tts.synthesize", return_value=(45.0, [])), \
                     patch("src.main.video_gen.generate_scenes"), \
                     patch("src.main.render.build"), \
-                    patch("src.main.youtube.upload") as upload_mock:
+                    patch("src.main.youtube.upload", return_value="video-id") as upload_mock:
                 self.assertEqual(main(), 0)
-                upload_mock.assert_not_called()
 
-            self.assertTrue((root / "output" / "meta.json").is_file())
-            self.assertFalse(cfg.history_file.exists())
+            verify_mock.assert_called_once_with(cfg)
+            upload_mock.assert_called_once()
+            self.assertTrue(cfg.history_file.is_file())
 
 
 if __name__ == "__main__":

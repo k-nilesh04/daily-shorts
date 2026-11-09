@@ -26,6 +26,9 @@ class Config:
     tts_rate: str = field(default_factory=lambda: _env("TTS_RATE", "+0%"))
     target_seconds: int = field(default_factory=lambda: int(_env("TARGET_SECONDS", "45")))
     gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-3.1-flash-lite"))
+    # Video model used by the Gemini Interactions (Omni) API. Overridable so a
+    # project can switch to another supported model without a code change.
+    omni_model: str = field(default_factory=lambda: _env("OMNI_MODEL", "gemini-omni-1.2-flash"))
 
     # video
     width: int = 1080
@@ -36,8 +39,7 @@ class Config:
     caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "78")))
     caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", False))
     segment_seconds: float = field(default_factory=lambda: float(_env("SEGMENT_SECONDS", "4.5")))
-    header_title: str = field(default_factory=lambda: _env("HEADER_TITLE", "COMEDY SHORTS  /  FUNNY TOONS"))
-    header_subtitle: str = field(default_factory=lambda: _env("HEADER_SUBTITLE", "3D ANIMATION  /  ENTERTAINING  /  FUNNY"))
+    # Fixed header text is no longer rendered; only captions appear over the video.
     yt_category_id: str = field(default_factory=lambda: _env("YT_CATEGORY_ID", "23"))
 
     @property
