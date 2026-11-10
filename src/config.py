@@ -13,7 +13,12 @@ def _bool(name: str, default: bool = False) -> bool:
 
 def _env(name: str, default: str = "") -> str:
     # GitHub passes unset vars as empty strings; treat those as "use default".
-    return os.getenv(name) or default
+    # Strip whitespace to handle accidental spaces in GitHub Variables/Secrets.
+    value = os.getenv(name, "")
+    if value is None:
+        value = ""
+    value = value.strip()
+    return value or default
 
 
 @dataclass(frozen=True)
@@ -89,10 +94,16 @@ class Config:
     def __post_init__(self) -> None:
         if not 30 <= self.target_seconds <= 60:
             raise ValueError("TARGET_SECONDS must be between 30 and 60")
+        object.__setattr__(self, "video_provider", self.video_provider.lower().strip())
         if self.video_provider not in {"gemini", "json2video"}:
-            raise ValueError("VIDEO_PROVIDER must be 'gemini' or 'json2video'")
+            raise ValueError(
+                f"VIDEO_PROVIDER must be 'gemini' or 'json2video' "
+                f"(got {self.video_provider!r}). Check your GitHub Variable "
+                f"VIDEO_PROVIDER under Settings -> Secrets and variables -> Actions -> Variables.")
+        object.__setattr__(self, "layout", self.layout.lower().strip())
         if self.layout not in {"fullscreen", "frame"}:
-            raise ValueError("LAYOUT must be 'fullscreen' or 'frame'")
+            raise ValueError(f"LAYOUT must be 'fullscreen' or 'frame' (got {self.layout!r})")
+        object.__setattr__(self, "privacy_status", self.privacy_status.lower().strip())
         if self.privacy_status not in {"private", "unlisted", "public"}:
             raise ValueError(
                 "PRIVACY_STATUS must be 'private', 'unlisted', or 'public'")
