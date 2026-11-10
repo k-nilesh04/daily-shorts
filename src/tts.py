@@ -34,11 +34,19 @@ def probe_duration(path: Path) -> float:
 
 async def _synth(text: str, voice: str, rate: str, out: Path) -> list[dict]:
     import edge_tts  # imported lazily so offline tests don't need it
+    import re
+
+    # Normalize whitespace and drop control characters that occasionally make
+    # the Microsoft TTS endpoint return no audio.
+    clean = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    if not clean:
+        raise RuntimeError("TTS text is empty after cleaning")
 
     try:
-        comm = edge_tts.Communicate(text, voice, rate=rate, boundary="WordBoundary")
+        comm = edge_tts.Communicate(clean, voice, rate=rate, boundary="WordBoundary")
     except TypeError:  # older edge-tts emits word boundaries by default
-        comm = edge_tts.Communicate(text, voice, rate=rate)
+        comm = edge_tts.Communicate(clean, voice, rate=rate)
     words: list[dict] = []
     with open(out, "wb") as f:
         async for chunk in comm.stream():
@@ -99,8 +107,21 @@ def trim_words(words: list[dict], target_seconds: float) -> list[dict]:
     return kept
 
 
+@retry(times=3, delay=5)
 def synthesize(cfg: Config, text: str, out: Path) -> tuple[float, list[dict]]:
-    words = asyncio.run(_synth(text, cfg.tts_voice, cfg.tts_rate, out))
+    try:
+        words = asyncio.run(_synth(text, cfg.tts_voice, cfg.tts_rate, out))
+    except Exception as error:  # noqa: BLE001 - edge-tts raises non-RuntimeError types
+        # edge-tts raises NoAudioReceived (an Exception, not RuntimeError) when
+        # the service returns no audio. Convert to RuntimeError so the adaptive
+        # retry loop in main.py can regenerate the script, and so the message is
+        # actionable instead of a raw traceback.
+        raise RuntimeError(
+            f"edge-tts produced no audio for voice {cfg.tts_voice!r} "
+            f"(TTS_RATE={cfg.tts_rate!r}): {error}. Check TTS_VOICE and "
+            "TTS_RATE, or retry (the Microsoft TTS endpoint is occasionally "
+            "flaky)."
+        ) from error
     if not out.is_file() or out.stat().st_size == 0:
         raise RuntimeError(
             f"edge-tts produced no audio for voice {cfg.tts_voice!r}; "
