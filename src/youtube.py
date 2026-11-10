@@ -121,20 +121,35 @@ def verify(cfg: Config) -> str:
         raise RuntimeError(_refresh_error_message(error)) from error
 
     granted = _granted_scopes(creds)
-    if granted and "https://www.googleapis.com/auth/youtube.upload" not in granted:
-        raise RuntimeError(
-            "The refresh token does not include the youtube.upload scope. "
-            f"Granted scopes: {', '.join(granted) or '(none)'}. Re-run "
-            "`python scripts/get_youtube_token.py client_secret.json` with the "
-            "same Desktop OAuth client and replace YT_REFRESH_TOKEN. Also make "
-            "sure the OAuth consent screen lists "
-            "https://www.googleapis.com/auth/youtube.upload as a scope."
-        )
+    if granted:
+        # tokeninfo succeeded — use it as the authority on scopes.
+        if "https://www.googleapis.com/auth/youtube.upload" not in granted:
+            raise RuntimeError(
+                "The refresh token does not include the youtube.upload scope. "
+                f"Granted scopes: {', '.join(granted)}. Re-run "
+                "`python scripts/get_youtube_token.py client_secret.json` with the "
+                "same Desktop OAuth client and replace YT_REFRESH_TOKEN. Also make "
+                "sure the OAuth consent screen lists "
+                "https://www.googleapis.com/auth/youtube.upload as a scope."
+            )
+        log.info("YouTube credentials verified (upload scope present).")
+        # Try to get the channel name for a nicer log line, but don't fail if
+        # the token lacks the read scope — upload still works.
+        yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        try:
+            response = yt.channels().list(part="snippet", mine=True).execute()
+            items = response.get("items") or []
+            if items:
+                title = items[0].get("snippet", {}).get("title") or "(unnamed channel)"
+                log.info("YouTube credentials verified for channel: %s", title)
+                return title
+        except HttpError:
+            pass  # read scope missing — non-fatal, upload scope is confirmed
+        return "(upload scope verified)"
 
-    # The upload scope alone does not grant read access to channels, so a
-    # channels().list(mine=True) call can fail with insufficientPermissions
-    # even for a perfectly valid upload token. Treat that as a non-fatal
-    # warning and only fail on errors that actually block uploads.
+    # tokeninfo failed (network or invalid token) — fall back to the channels
+    # API. An insufficientPermissions 403 here means the token is upload-only,
+    # which is still usable.
     yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
     try:
         response = yt.channels().list(part="snippet", mine=True).execute()
@@ -143,11 +158,8 @@ def verify(cfg: Config) -> str:
         content = getattr(error, "content", b"") or b""
         text = (content.decode("utf-8", "ignore") + " " + str(error)).lower()
         if status == 403 and "insufficient" in text:
-            log.warning(
-                "Token is valid for uploads but lacks a read scope, so the "
-                "channel name could not be verified. This does not block "
-                "uploading."
-            )
+            log.info("YouTube credentials verified (upload scope present; "
+                     "read scope not available, so channel name skipped).")
             return "(upload scope verified)"
         raise RuntimeError(_http_error_message(error)) from error
     items = response.get("items") or []
