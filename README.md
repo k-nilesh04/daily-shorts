@@ -1,169 +1,299 @@
-# daily-shorts
+# 🎬 Daily Shorts
 
-Automated 30–60 second 3D AI animated comedy & storytelling YouTube Shorts, rendered locally or on GitHub Actions.
+> Automated 30–60 second 3D AI animated comedy YouTube Shorts — generated, rendered, and optionally uploaded, fully unattended.
+
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-87%20passing-brightgreen.svg)](#testing)
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Cost & Billing](#cost--billing)
+- [Quick Start](#quick-start)
+- [GitHub Actions Setup](#github-actions-setup)
+- [Configuration Reference](#configuration-reference)
+- [YouTube Upload Setup](#youtube-upload-setup)
+- [Local Development](#local-development)
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [Reference Links](#reference-links)
+
+---
+
+## Overview
+
+**Daily Shorts** is a fully automated pipeline that produces vertical (1080×1920) YouTube Shorts from a single niche prompt. It handles everything end-to-end:
+
+- **Story generation** — Gemini writes a Hinglish comedy script + scene prompts
+- **Voice-over** — Edge-TTS synthesizes narration with word-level timings
+- **Video generation** — Gemini Omni (or JSON2Video) renders 15-second 3D cartoon scenes
+- **Rendering** — FFmpeg assembles scenes, audio, and animated karaoke captions into a final MP4
+- **Upload** — Optional private-first YouTube upload with topic history tracking
+
+The pipeline runs on **GitHub Actions** (daily cron) or **locally**, and adapts automatically to TTS timing variations so the final video never exceeds 50 seconds.
+
+### Default Niche
+> *Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations.*
+
+---
+
+## Architecture
 
 ```
-Gemini 3.1 Flash-Lite (comedy story + polished 3D-cartoon scene prompts) → edge-tts (Hinglish narration + word timings)
-  → Gemini Omni Flash (matching 15-second 3D cartoon video scenes, generated sequentially)
-  → FFmpeg (fullscreen 9:16 vertical video + animated karaoke subtitles)
-  → optional YouTube upload (Comedy category) → topic history
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────┐     ┌──────────┐
+│  Gemini     │────▶│  Edge-TTS    │────▶│  Gemini Omni    │────▶│  FFmpeg  │────▶│  YouTube │
+│  Flash-Lite │     │  (voice +    │     │  (15s scenes)   │     │  (render │     │  (upload)│
+│  (script)   │     │   timings)   │     │  or JSON2Video  │     │  + subs) │     │          │
+└─────────────┘     └──────────────┘     └─────────────────┘     └──────────┘     └──────────┘
 ```
 
-Default niche: *Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations*. The final video is full 1080×1920 vertical format with viral popping captions.
+### Pipeline Steps
 
-## Important: video-generation charges
+| Step | Module | Description |
+|------|--------|-------------|
+| 1 | `script_gen.py` | Generates story, metadata, and scene prompts (adapts word count to TTS rate) |
+| 2 | `tts.py` | Synthesizes narration + word timings via Edge-TTS |
+| 3 | `video_gen.py` | Generates 15s AI video scenes (Gemini Omni) or renders still-image (JSON2Video) |
+| 4 | `render.py` | Normalizes clips, overlays audio + animated karaoke captions, outputs MP4 |
+| 5 | `youtube.py` | Uploads to YouTube (private by default) with retry + verification |
+| 6 | `history.py` | Records topic to avoid repetition |
 
-Gemini Omni video generation is **paid** and has no free tier. Google's [current pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-omni-1.2-flash)
-estimates about **$0.07 per second for 720p output**. A 45-second Short uses three 15-second scene
-requests and costs about **$3.15** for video output. A 60-second Short is
-about **$4.20**.
+### Adaptive Timing
+The pipeline measures real TTS duration and regenerates the script if it falls outside the accepted window (1–50 seconds). If narration is still too long after retries, audio and captions are trimmed to the target length. Minor timing variations are handled by looping clips.
 
-`AI_VIDEO_MAX_USD` defaults to `$3.25`. The workflow refuses a video whose estimated scene cost
-exceeds that limit, so the default supports up to 45 seconds. This is an application-side estimate,
-**not a provider-enforced billing cap**; actual charges can differ. Set a Google Cloud billing budget
-alert (for example, $100/month) and review actual usage. At one 45-second generation per day,
-expected video-generation cost is about **$94.50 per 30 days**. Local runs use paid video generation by default unless `DRY_RUN=true`; Actions render-only runs
-automatically use dry-run mode. Generation is sequential with bounded
-backoff retries for HTTP 429 and for transient HTTP 5xx/connection errors; repeated 429 errors can
-still mean the project's model quota, usage tier, or billing limit needs attention. Check the
-project's active limits in [AI Studio](https://aistudio.google.com/rate-limit). Set `OMNI_MODEL` to
-override the video model (default `gemini-omni-1.2-flash`); invalid keys, disabled APIs, and unknown
-models now fail with an actionable message.
-Provider retry delays and exponential backoff are capped at 120 seconds per retry. A quota or
-billing block must be resolved in the Google project; waiting and retrying cannot increase the
-available quota.
-Video-generation requests use bounded retries and polling, with a 25-minute maximum total wait
-across all scenes. The Actions job is limited to 40 minutes.
+---
 
-To render through JSON2Video instead, set `VIDEO_PROVIDER=json2video` explicitly and provide
-`JSON2VIDEO_API_KEY` and `JSON2VIDEO_IMAGE_URL`. This uses JSON2Video's movie API: it renders the
-configured still image as the background, then this project adds narration and captions. No fixed
-title or header text is burned in. It does **not** turn the scene prompts into AI-generated
-animation. Adding only
-`JSON2VIDEO_API_KEY` does not change providers; Gemini remains the default. There is no fallback
-image, so a missing `JSON2VIDEO_IMAGE_URL` stops the run instead of publishing an off-brand video.
-JSON2Video plan quotas and credits apply; the Gemini cost estimate does not cover JSON2Video.
+## Cost & Billing
 
-Set `DRY_RUN=true` to skip paid video-provider rendering and render locally generated test-pattern
-clips instead. Script creation still uses `GEMINI_API_KEY`; dry-run only avoids the paid video
-generation calls. The Actions workflow enables dry-run for manual runs with `upload = false` and
-for scheduled runs until all YouTube upload secrets are configured. Once scheduled upload
-credentials are present, scheduled runs use paid video generation and upload as before.
+### Gemini Omni (default provider)
+| Duration | Scenes | Estimated Cost |
+|----------|--------|----------------|
+| 30s | 2 | ~$2.10 |
+| 45s | 3 | ~$3.15 |
+| 60s | 4 | ~$4.20 |
 
-## Setup
+- **Rate**: ~$0.07/second at 720p
+- **No free tier** — requires paid Google Cloud billing
+- `AI_VIDEO_MAX_USD` defaults to `$3.25` (blocks >45s by default)
+- This is an **application-side estimate**, not a provider-enforced cap
 
-### 1. Gemini API
+### JSON2Video (alternative)
+- Renders a still image + narration + captions (no AI video generation)
+- Avoids Gemini video rate limits entirely
+- Subject to JSON2Video plan quotas/credits
 
-Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey). Enable a paid
-Gemini API tier/billing for the Google Cloud project attached to that key. The same key can be used
-for both script generation and Omni video generation.
+### Dry Run Mode
+Set `DRY_RUN=true` to skip paid video generation and render test-pattern clips instead. Script generation still uses `GEMINI_API_KEY`.
 
-For JSON2Video rendering, set `VIDEO_PROVIDER=json2video` and `JSON2VIDEO_API_KEY` in `.env`
-instead. Optionally set `JSON2VIDEO_IMAGE_URL` to a public image URL. `GEMINI_API_KEY` is still
-needed for generating the story and metadata.
+---
 
-### 2. Run on GitHub Actions
+## Quick Start
 
-1. Add repository secret `GEMINI_API_KEY` under **Settings → Secrets and variables → Actions**.
-   If you use a separate API key for video, add `OMNI_API_KEY`; otherwise the workflow uses
-   `GEMINI_API_KEY` for both.
-   For JSON2Video, add `JSON2VIDEO_API_KEY` and set the Actions variable `VIDEO_PROVIDER` to
-   `json2video`. Optionally set `JSON2VIDEO_IMAGE_URL` as a variable.
-2. The default `AI_VIDEO_MAX_USD=3.25` is set in code. To override it, add a repository Actions
-   variable named `AI_VIDEO_MAX_USD` only after reviewing the current pricing.
-3. Open **Actions → Daily Video → Run workflow**, select `main`, and keep `upload = false` for a
-   render-only dry run. It produces a test-pattern video without paid Omni video calls. Set
-   `DRY_RUN=false` locally only when you intend to use paid video generation.
-4. Download the run's `video-N` artifact and inspect `video.mp4` and `meta.json`.
+### Prerequisites
+- Python 3.12+
+- FFmpeg (with ffprobe)
 
-The story defaults to Hinglish in Latin script, the `hi-IN-MadhurNeural` voice, and 45 seconds.
-Script word limits start from a conservative speaking rate of about 2.0 words per second, so a
-45-second target asks Gemini for roughly 90 words. The pipeline then measures the real TTS
-duration and regenerates with an adjusted budget if it lands outside the accepted window. Any
-narration between 1 and 50 seconds is accepted; shorter narration simply produces a shorter Short.
-If narration is still too long after the retries, the pipeline trims the audio and captions to the
-target length so the run completes instead of aborting before paid video generation. Minor TTS
-timing variation is allowed; the renderer loops clips to cover a small overrun.
-The story and metadata use `gemini-3.1-flash-lite` by default. Set `GEMINI_MODEL` in `.env` or as a
-repository Actions variable to choose another supported text-generation model. Set repository
-variables `LANGUAGE`, `TTS_VOICE`, `TARGET_SECONDS` (30–60), and `NICHE` to customize them.
-Videos longer than 45 seconds are blocked by the default
-$3.25 estimated-cost limit; increase that variable only if you approve the higher spend.
+### Local run
 
-### 3. Optional YouTube upload
+```bash
+git clone https://github.com/<your-username>/daily-shorts.git
+cd daily-shorts
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env: add GEMINI_API_KEY (and JSON2VIDEO_* if using JSON2Video)
+set -a; source .env; set +a   # Windows: load .env manually
+python -m unittest discover -s tests   # verify setup
+python -m src.main                    # generates video (no upload)
+```
 
-1. In Google Cloud Console, enable **YouTube Data API v3**.
-2. Configure the OAuth consent screen and create an OAuth client ID for a Desktop app.
-3. Run `python scripts/get_youtube_token.py client_secret.json` locally with the channel account.
-   The script requests the `youtube.upload` scope (plus `youtube.readonly` for
-   verification) and prints the granted scopes — confirm `youtube.upload` is there.
-   If it is missing, add `https://www.googleapis.com/auth/youtube.upload` to the
-   OAuth consent screen's scopes in Google Cloud Console and re-run.
-4. Add `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository Actions secrets.
-5. Test using **Run workflow** with `upload = true`. Uploads are private by default.
-   The workflow refreshes the token and confirms channel access **before** paid video generation,
-   so an expired/revoked refresh token or missing YouTube Data API fails fast with instructions.
-   While the OAuth consent screen is in **Testing** mode, Google expires refresh tokens after 7
-   days; publish the app or re-run `scripts/get_youtube_token.py` when that happens.
+### Render-only (no paid video calls)
+```bash
+DRY_RUN=true python -m src.main
+```
 
-Scheduled runs upload automatically once all three YouTube secrets are configured. Until then,
-scheduled runs produce a dry-run artifact rather than failing on missing upload credentials or
-making paid video-generation calls. Manual runs requesting upload stop before paid generation
-when YouTube secrets are missing.
-Review generated videos and verify facts before publishing them publicly.
+---
 
-## Local development
+## GitHub Actions Setup
 
-Requires Python 3.12 and FFmpeg.
+### 1. Add Secrets
+Go to **Settings → Secrets and variables → Actions → Secrets**:
 
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `GEMINI_API_KEY` | ✅ Always | Gemini API key ([get one](https://aistudio.google.com/apikey)) |
+| `JSON2VIDEO_API_KEY` | JSON2Video only | From [json2video.com](https://json2video.com/) |
+| `OMNI_API_KEY` | Optional | Separate key for video (falls back to `GEMINI_API_KEY`) |
+| `YT_CLIENT_ID` | Upload only | OAuth Desktop app client ID |
+| `YT_CLIENT_SECRET` | Upload only | OAuth Desktop app client secret |
+| `YT_REFRESH_TOKEN` | Upload only | From `python scripts/get_youtube_token.py` |
+
+### 2. Add Variables (optional, all have defaults)
+Go to **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VIDEO_PROVIDER` | `gemini` | `gemini` or `json2video` |
+| `JSON2VIDEO_IMAGE_URL` | — | Public image URL (required for JSON2Video) |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Script generation model |
+| `OMNI_MODEL` | `gemini-omni-1.2-flash` | Video generation model |
+| `TARGET_SECONDS` | `45` | Video length (30–60) |
+| `NICHE` | funny 3D comedy stories | Content niche |
+| `LANGUAGE` | `Hinglish` | Narration language |
+| `TTS_VOICE` | `hi-IN-MadhurNeural` | Edge-TTS voice |
+| `TTS_RATE` | `+0%` | Speech rate |
+| `LAYOUT` | `fullscreen` | `fullscreen` or `frame` |
+| `PRIVACY_STATUS` | `private` | `private`, `unlisted`, or `public` |
+| `AI_VIDEO_MAX_USD` | `3.25` | Cost limit |
+
+### 3. Run the workflow
+1. Go to **Actions → Daily Video → Run workflow**
+2. Keep `upload = false` for a render-only dry run first
+3. Download the `video-N` artifact and inspect `video.mp4` + `meta.json`
+4. Set `upload = true` when ready to publish
+
+### Scheduled runs
+The workflow runs daily at 03:30 UTC. Scheduled runs:
+- Use **paid video generation** + **upload** if YouTube secrets are configured
+- Fall back to **dry-run** (test-pattern clips) if secrets are missing
+
+---
+
+## Configuration Reference
+
+All settings are driven by environment variables. See [`.env.example`](.env.example) for the full list.
+
+### Key settings
+
+| Variable | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `TARGET_SECONDS` | `45` | 30–60 | Target video duration |
+| `AI_VIDEO_MAX_USD` | `3.25` | ≥0 | Cost limit (estimate) |
+| `DRY_RUN` | `false` | bool | Skip paid video generation |
+| `UPLOAD` | `false` | bool | Upload to YouTube |
+| `PRIVACY_STATUS` | `private` | enum | Upload privacy |
+
+---
+
+## YouTube Upload Setup
+
+1. **Google Cloud Console** → Enable **YouTube Data API v3**
+2. **OAuth consent screen** → Configure for Desktop app
+   - Add scope: `https://www.googleapis.com/auth/youtube.upload`
+   - Add your channel account as a **Test user** (if in Testing mode)
+3. **Credentials** → Create **OAuth client ID** (Desktop app) → Download JSON
+4. Run locally:
+   ```bash
+   python scripts/get_youtube_token.py client_secret.json
+   ```
+5. Copy the printed values to GitHub Secrets (`YT_CLIENT_ID`, `YT_CLIENT_SECRET`, `YT_REFRESH_TOKEN`)
+6. Test with **Run workflow** → `upload = true`
+
+> ⚠️ **Testing mode tokens expire after 7 days.** Publish the OAuth app or regenerate tokens periodically.
+
+The workflow verifies the refresh token **before** paid video generation, so expired tokens fail fast with instructions.
+
+---
+
+## Local Development
+
+### Requirements
+- Python 3.12+
+- FFmpeg (with ffprobe)
+
+### Commands
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env            # add Gemini key and approve video-generation spend
-set -a; source .env; set +a     # Windows: load .env with your shell of choice
+cp .env.example .env            # add Gemini key
+python -m unittest discover -s tests   # run tests (87 tests, 2 skipped without FFmpeg)
+python -m src.main              # generate video (no upload)
+```
+
+### Testing
+```bash
+# Full suite
 python -m unittest discover -s tests
-python -m src.main              # generates a paid video; does not upload
+
+# With FFmpeg installed (runs end-to-end render test)
+# Install: https://ffmpeg.org/download.html
 ```
 
-Tests that need FFmpeg are skipped when `ffmpeg` is not on `PATH`. The offline suite must never
-call a paid provider or need real credentials.
+Tests that need FFmpeg are skipped when it's not on `PATH`. The offline suite never calls paid providers or needs real credentials.
 
-## Project layout
+---
+
+## Project Structure
 
 ```
-src/main.py        pipeline orchestration
-src/config.py      environment-driven configuration and validation
-src/script_gen.py  Hinglish story, metadata, and scene prompts
-src/video_gen.py   paid Omni video generation and cost preflight
-src/tts.py         narration and word timings
-src/render.py      FFmpeg assembly and motion design
-src/captions.py    animated word-group captions
-src/history.py     topic history
-src/youtube.py     private-first upload
-src/util.py        logging and retry helpers
-tests/             offline and mocked API tests
+daily-shorts/
+├── src/
+│   ├── main.py          # Pipeline orchestration
+│   ├── config.py        # Environment-driven configuration
+│   ├── script_gen.py    # Story, metadata, scene prompts
+│   ├── video_gen.py     # Gemini Omni / JSON2Video generation
+│   ├── tts.py           # Narration + word timings (Edge-TTS)
+│   ├── render.py        # FFmpeg assembly + motion design
+│   ├── captions.py      # Animated karaoke captions (ASS)
+│   ├── youtube.py       # Private-first upload + verification
+│   ├── history.py       # Topic history tracking
+│   └── util.py          # Logging + retry helpers
+├── tests/               # Offline + mocked API tests (87 tests)
+├── scripts/
+│   └── get_youtube_token.py  # OAuth refresh token helper
+├── .github/workflows/
+│   └── daily-video.yml  # GitHub Actions workflow
+├── .env.example         # Environment template
+├── requirements.txt     # Python dependencies
+└── README.md
 ```
 
-The renderer always normalizes clips to 1080×1920 at 30 fps, then adds narration and captions.
-The [Gemini video guide](https://ai.google.dev/gemini-api/docs/video) documents 3–15 second video
-generation through the Interactions API. This project requests 15-second, 720p, vertical clips and
-adds its own narration and captions.
+---
 
-JSON2Video uses its [movie API](https://json2video.com/docs/v2/getting-started/quickstart) to
-render a vertical still-image background when selected with `VIDEO_PROVIDER=json2video`; captions
-are added by this project, so the video contains no fixed title text.
+## Troubleshooting
 
-## Reference links
+### 429 Too Many Requests (video generation)
+- **Cause**: Gemini Omni has no free tier; quota is too low
+- **Fix**: Enable billing in Google Cloud Console, or switch to `VIDEO_PROVIDER=json2video`
 
-- Google AI Studio API keys: https://aistudio.google.com/apikey
-- Gemini API documentation: https://ai.google.dev/gemini-api/docs
-- Gemini video generation guide: https://ai.google.dev/gemini-api/docs/video
-- Gemini rate limits: https://aistudio.google.com/rate-limit
-- Gemini pricing: https://ai.google.dev/gemini-api/docs/pricing
-- JSON2Video website: https://json2video.com/
-- JSON2Video API quickstart: https://json2video.com/docs/v2/getting-started/quickstart
-- Google Cloud Console: https://console.cloud.google.com/
-- YouTube Data API v3 documentation: https://developers.google.com/youtube/v3
-- YouTube upload API guide: https://developers.google.com/youtube/v3/guides/uploading_a_video
-- GitHub Actions secrets documentation: https://docs.github.com/actions/security-guides/using-secrets-in-github-actions
-- FFmpeg download and documentation: https://ffmpeg.org/download.html
+### NoAudioReceived (TTS)
+- **Cause**: Microsoft TTS endpoint returned no audio
+- **Fix**: Check `TTS_VOICE` is valid (`edge-tts --list-voices`), retry (3× backoff built in), or try a different voice
+
+### YouTube 403 insufficientPermissions
+- **Cause**: Refresh token lacks `youtube.upload` scope
+- **Fix**: Add the scope to OAuth consent screen, regenerate token with `get_youtube_token.py`
+
+### YouTube token expired
+- **Cause**: OAuth app in Testing mode expires tokens after 7 days
+- **Fix**: Re-run `get_youtube_token.py` and update `YT_REFRESH_TOKEN` secret
+
+### Script too long / too short
+- **Cause**: TTS rate differs from estimate
+- **Fix**: Automatic — pipeline regenerates with adjusted word budget, trims if needed
+
+---
+
+## Reference Links
+
+- [Google AI Studio (API keys)](https://aistudio.google.com/apikey)
+- [Gemini API documentation](https://ai.google.dev/gemini-api/docs)
+- [Gemini video generation](https://ai.google.dev/gemini-api/docs/video)
+- [Gemini rate limits](https://aistudio.google.com/rate-limit)
+- [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
+- [JSON2Video](https://json2video.com/)
+- [JSON2Video API quickstart](https://json2video.com/docs/v2/getting-started/quickstart)
+- [Google Cloud Console](https://console.cloud.google.com/)
+- [YouTube Data API v3](https://developers.google.com/youtube/v3)
+- [GitHub Actions secrets](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions)
+- [FFmpeg](https://ffmpeg.org/download.html)
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.

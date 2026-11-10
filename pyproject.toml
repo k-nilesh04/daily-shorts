@@ -1,0 +1,34 @@
+[project]
+name = "daily-shorts"
+version = "1.0.0"
+description = "Automated 30-60 second 3D AI animated comedy YouTube Shorts generator"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [
+    { name = "k-nilesh04", email = "k-nilesh04@users.noreply.github.com" },
+]
+keywords = ["youtube", "shorts", "ai", "video", "automation", "gemini", "tts"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Homepage = "https://github.com/k-nilesh04/daily-shorts"
+Repository = "https://github.com/k-nilesh04/daily-shorts"
+Issues = "https://github.com/k-nilesh04/daily-shorts/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
