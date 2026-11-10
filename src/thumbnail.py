@@ -1,4 +1,5 @@
 """Generate a YouTube thumbnail from the script using Gemini image generation (nano banana)."""
+
 import base64
 from pathlib import Path
 
@@ -7,7 +8,6 @@ from google.genai import errors, types
 
 from .config import Config
 from .util import log
-
 
 THUMBNAIL_WIDTH = 1280
 THUMBNAIL_HEIGHT = 720
@@ -140,8 +140,10 @@ def generate(
 
     # Resize to 1280x720 if Pillow is available
     try:
-        from PIL import Image
         import io
+
+        from PIL import Image
+
         img = Image.open(io.BytesIO(image_bytes))
         if img.size != (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT):
             img = img.resize(
