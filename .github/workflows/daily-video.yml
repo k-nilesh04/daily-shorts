@@ -109,6 +109,7 @@ jobs:
           PRIVACY_STATUS: ${{ vars.PRIVACY_STATUS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           OMNI_MODEL: ${{ vars.OMNI_MODEL }}
+          THUMBNAIL_MODEL: ${{ vars.THUMBNAIL_MODEL }}
           AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
           LAYOUT: ${{ vars.LAYOUT }}
           SEGMENT_SECONDS: ${{ vars.SEGMENT_SECONDS }}
@@ -125,6 +126,7 @@ jobs:
           name: video-${{ github.run_number }}
           path: |
             output/video.mp4
+            output/thumbnail.jpg
             output/meta.json
           retention-days: 3
           if-no-files-found: ignore

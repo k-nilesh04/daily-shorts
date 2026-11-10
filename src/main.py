@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, history, render, script_gen, tts, video_gen, youtube
+from . import config, history, render, script_gen, thumbnail, tts, video_gen, youtube
 from .util import log
 
 
@@ -192,11 +192,22 @@ def main() -> int:
     video = cfg.output_dir / "video.mp4"
     render.build(cfg, clips, voice, duration, words, video, cfg.work_dir / "render")
 
+    # 4b. generate thumbnail (non-fatal)
+    thumb_path = cfg.output_dir / "thumbnail.jpg"
+    thumb = thumbnail.generate(
+        cfg, meta.get("title", "Daily Short"), meta.get("script", ""),
+        thumb_path,
+    )
+
     # 5. upload
     if not do_upload:
         log.info("Upload skipped (dry run). Video: %s", video)
+        if thumb:
+            log.info("Thumbnail saved: %s", thumb)
         return 0
     vid = youtube.upload(cfg, video, meta)
+    if thumb and vid:
+        youtube.upload_thumbnail(cfg, vid, thumb)
 
     # 6. remember the topic only after a successful upload
     history.append(cfg.history_file, meta["topic"], meta["title"], vid)

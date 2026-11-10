@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Custom YouTube thumbnail generation via Gemini image generation (nano banana)
+- `src/thumbnail.py` module with prompt builder, image extraction, and resize
+- `upload_thumbnail()` in `youtube.py` for thumbnail upload via YouTube API
+- `THUMBNAIL_MODEL` config (default: `gemini-2.0-flash-exp`)
+- Pillow dependency for image processing
+- 8 new thumbnail tests (95 total)
 - MIT LICENSE file
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md
 - GitHub issue and PR templates

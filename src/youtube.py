@@ -227,6 +227,34 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
     return vid
 
 
+def upload_thumbnail(cfg: Config, video_id: str, thumbnail: Path) -> bool:
+    """Upload a custom thumbnail for an already-uploaded video.
+
+    Returns True on success, False on failure (non-fatal).
+    """
+    if not thumbnail or not thumbnail.is_file():
+        return False
+    missing = missing_credentials(cfg)
+    if missing:
+        log.warning("Cannot upload thumbnail — missing credentials: %s", ", ".join(missing))
+        return False
+    creds = _credentials(cfg)
+    yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    try:
+        yt.thumbnails().set(
+            videoId=video_id,
+            media_body=MediaFileUpload(str(thumbnail), mimetype="image/jpeg"),
+        ).execute()
+        log.info("Thumbnail uploaded for video %s", video_id)
+        return True
+    except HttpError as error:
+        log.warning("Thumbnail upload failed (HTTP %s): %s", getattr(getattr(error, "resp", None), "status", "?"), error)
+        return False
+    except Exception as error:  # noqa: BLE001
+        log.warning("Thumbnail upload failed: %s", error)
+        return False
+
+
 def _main() -> int:
     import argparse
     import logging

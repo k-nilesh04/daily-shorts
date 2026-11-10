@@ -59,7 +59,8 @@ The pipeline runs on **GitHub Actions** (daily cron) or **locally**, and adapts 
 | 2 | `tts.py` | Synthesizes narration + word timings via Edge-TTS |
 | 3 | `video_gen.py` | Generates 15s AI video scenes (Gemini Omni) or renders still-image (JSON2Video) |
 | 4 | `render.py` | Normalizes clips, overlays audio + animated karaoke captions, outputs MP4 |
-| 5 | `youtube.py` | Uploads to YouTube (private by default) with retry + verification |
+| 4b | `thumbnail.py` | Generates a custom thumbnail from the script using Gemini image generation (nano banana) |
+| 5 | `youtube.py` | Uploads video + thumbnail to YouTube (private by default) with retry + verification |
 | 6 | `history.py` | Records topic to avoid repetition |
 
 ### Adaptive Timing
@@ -141,6 +142,7 @@ Go to **Settings → Secrets and variables → Actions → Variables**:
 | `JSON2VIDEO_IMAGE_URL` | — | Public image URL (required for JSON2Video) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Script generation model |
 | `OMNI_MODEL` | `gemini-omni-1.2-flash` | Video generation model |
+| `THUMBNAIL_MODEL` | `gemini-2.0-flash-exp` | Thumbnail generation model (nano banana) |
 | `TARGET_SECONDS` | `45` | Video length (30–60) |
 | `NICHE` | funny 3D comedy stories | Content niche |
 | `LANGUAGE` | `Hinglish` | Narration language |
@@ -238,6 +240,7 @@ daily-shorts/
 │   ├── video_gen.py     # Gemini Omni / JSON2Video generation
 │   ├── tts.py           # Narration + word timings (Edge-TTS)
 │   ├── render.py        # FFmpeg assembly + motion design
+│   ├── thumbnail.py     # Custom thumbnail generation (Gemini nano banana)
 │   ├── captions.py      # Animated karaoke captions (ASS)
 │   ├── youtube.py       # Private-first upload + verification
 │   ├── history.py       # Topic history tracking

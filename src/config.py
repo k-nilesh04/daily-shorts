@@ -29,6 +29,8 @@ class Config:
     # Video model used by the Gemini Interactions (Omni) API. Overridable so a
     # project can switch to another supported model without a code change.
     omni_model: str = field(default_factory=lambda: _env("OMNI_MODEL", "gemini-omni-1.2-flash"))
+    # Model used for thumbnail generation (Gemini image generation / nano banana).
+    thumbnail_model: str = field(default_factory=lambda: _env("THUMBNAIL_MODEL", "gemini-2.0-flash-exp"))
 
     # video
     width: int = 1080
