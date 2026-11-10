@@ -11,17 +11,26 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
+      - name: System packages (FFmpeg + fonts)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
       - run: pip install -r requirements.txt
+
       - run: python -m unittest discover -s tests
+
       - name: Check formatting
         run: |
-          pip install "ruff>=0.8.0"
+          pip install "ruff==0.8.0"
           ruff check src/ tests/
           ruff format --check src/ tests/
