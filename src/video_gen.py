@@ -1,4 +1,5 @@
 """Generate video assets with Gemini Omni or render an image/title via JSON2Video."""
+
 import base64
 import json
 import math
@@ -71,7 +72,7 @@ def estimate_cost_usd(scene_count: int) -> float:
 
 def _backoff_seconds(attempt: int) -> float:
     return min(
-        RATE_LIMIT_RETRY_DELAY_SECONDS * (2 ** attempt),
+        RATE_LIMIT_RETRY_DELAY_SECONDS * (2**attempt),
         MAX_RATE_LIMIT_RETRY_DELAY_SECONDS,
     )
 
@@ -104,7 +105,11 @@ def _model_error(cfg: Config, error: errors.APIError) -> RuntimeError:
 
 
 def _generate_one(
-    cfg: Config, prompt: str, dest: Path, scene_number: int, deadline: float,
+    cfg: Config,
+    prompt: str,
+    dest: Path,
+    scene_number: int,
+    deadline: float,
 ) -> Path:
     client = genai.Client(
         api_key=cfg.ai_video_key,
@@ -143,7 +148,8 @@ def _generate_one(
                 if error.code == 404:
                     raise _model_error(cfg, error) from error
                 retryable = error.code == 429 or (
-                    isinstance(error.code, int) and 500 <= error.code < 600)
+                    isinstance(error.code, int) and 500 <= error.code < 600
+                )
                 if not retryable:
                     raise RuntimeError(
                         f"Gemini video generation failed for scene {scene_number} "
@@ -172,8 +178,11 @@ def _generate_one(
                     ) from error
                 log.warning(
                     "Scene %d failed with HTTP %d from Gemini. Retry %d/%d in %.1fs",
-                    scene_number, error.code, attempt + 1,
-                    MAX_RATE_LIMIT_RETRIES, wait,
+                    scene_number,
+                    error.code,
+                    attempt + 1,
+                    MAX_RATE_LIMIT_RETRIES,
+                    wait,
                 )
                 time.sleep(wait)
             except (httpx.TransportError, ConnectionError, TimeoutError) as error:
@@ -195,7 +204,11 @@ def _generate_one(
                     ) from error
                 log.warning(
                     "Scene %d connection error from Gemini (%s). Retry %d/%d in %.1fs",
-                    scene_number, error, attempt + 1, MAX_RATE_LIMIT_RETRIES, wait,
+                    scene_number,
+                    error,
+                    attempt + 1,
+                    MAX_RATE_LIMIT_RETRIES,
+                    wait,
                 )
                 time.sleep(wait)
 
@@ -212,7 +225,9 @@ def _generate_one(
         # Providers sometimes wrap base64 with newlines; decode a compact copy.
         video_bytes = base64.b64decode(re.sub(r"\s+", "", encoded), validate=True)
     except (ValueError, TypeError) as error:
-        raise RuntimeError(f"Gemini returned invalid video data for scene {scene_number}") from error
+        raise RuntimeError(
+            f"Gemini returned invalid video data for scene {scene_number}"
+        ) from error
     if not video_bytes:
         raise RuntimeError(f"Gemini returned an empty video for scene {scene_number}")
 
@@ -273,10 +288,24 @@ def _generate_placeholders(prompts: list[str], work: Path) -> list[Path]:
         try:
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=24:duration=15",
-                    "-an", "-c:v", "libx264", "-preset", "ultrafast",
-                    "-pix_fmt", "yuv420p", "-t", "15", str(path),
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc2=size=360x640:rate=24:duration=15",
+                    "-an",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-t",
+                    "15",
+                    str(path),
                 ],
                 capture_output=True,
                 text=True,
@@ -285,7 +314,8 @@ def _generate_placeholders(prompts: list[str], work: Path) -> list[Path]:
         except FileNotFoundError as error:
             raise RuntimeError(
                 "ffmpeg was not found; install FFmpeg and add it to PATH "
-                "(https://ffmpeg.org/download.html)") from error
+                "(https://ffmpeg.org/download.html)"
+            ) from error
         except subprocess.CalledProcessError as error:
             details = (error.stderr or "").strip()
             raise RuntimeError(
@@ -333,12 +363,14 @@ def _generate_json2video(cfg: Config, work: Path) -> list[Path]:
     # the caption track added by FFmpeg, so no fixed title/overlay is burned in.
     movie = {
         "resolution": JSON2VIDEO_RESOLUTION,
-        "scenes": [{
-            "duration": cfg.target_seconds,
-            "elements": [
-                {"type": "image", "src": cfg.json2video_image_url},
-            ],
-        }],
+        "scenes": [
+            {
+                "duration": cfg.target_seconds,
+                "elements": [
+                    {"type": "image", "src": cfg.json2video_image_url},
+                ],
+            }
+        ],
     }
     headers = {"x-api-key": cfg.json2video_key}
     for attempt in range(3):
@@ -355,16 +387,14 @@ def _generate_json2video(cfg: Config, work: Path) -> list[Path]:
             if attempt == 2:
                 raise RuntimeError(
                     "Could not connect to JSON2Video API. Check your network "
-                    "connection and JSON2VIDEO_API_KEY.") from error
-            log.warning("JSON2Video connection failed (%s). Retry %d/3 in 5s",
-                        error, attempt + 1)
+                    "connection and JSON2VIDEO_API_KEY."
+                ) from error
+            log.warning("JSON2Video connection failed (%s). Retry %d/3 in 5s", error, attempt + 1)
             time.sleep(5)
         except requests.exceptions.Timeout as error:
             if attempt == 2:
-                raise RuntimeError(
-                    "JSON2Video API timed out. Try again later.") from error
-            log.warning("JSON2Video request timed out. Retry %d/3 in 5s",
-                        attempt + 1)
+                raise RuntimeError("JSON2Video API timed out. Try again later.") from error
+            log.warning("JSON2Video request timed out. Retry %d/3 in 5s", attempt + 1)
             time.sleep(5)
         except requests.exceptions.HTTPError as error:
             raise _json2video_http_error(error) from error
@@ -395,7 +425,8 @@ def _generate_json2video(cfg: Config, work: Path) -> list[Path]:
         except requests.exceptions.RequestException as error:
             raise RuntimeError(
                 f"Lost connection to JSON2Video while checking project {project}: "
-                f"{error}. Retry later.") from error
+                f"{error}. Retry later."
+            ) from error
         movie_status = status_response.json().get("movie")
         if not isinstance(movie_status, dict):
             raise RuntimeError("JSON2Video status response did not contain a movie")
@@ -406,15 +437,14 @@ def _generate_json2video(cfg: Config, work: Path) -> list[Path]:
             if not isinstance(video_url, str) or not video_url:
                 raise RuntimeError("JSON2Video completed without returning a video URL")
             try:
-                video_response = requests.get(
-                    video_url, timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS)
+                video_response = requests.get(video_url, timeout=JSON2VIDEO_REQUEST_TIMEOUT_SECONDS)
                 video_response.raise_for_status()
             except requests.exceptions.HTTPError as error:
                 raise _json2video_http_error(error) from error
             except requests.exceptions.RequestException as error:
                 raise RuntimeError(
-                    f"Could not download the rendered JSON2Video file: {error}. "
-                    "Retry later.") from error
+                    f"Could not download the rendered JSON2Video file: {error}. Retry later."
+                ) from error
             if not video_response.content:
                 raise RuntimeError("JSON2Video returned an empty video")
             dest = work / "scene_01.mp4"
@@ -458,7 +488,8 @@ def _write_manifest(work: Path, cfg: Config, prompts: list[str]) -> None:
         "prompts": prompts,
     }
     (work / SCENE_MANIFEST_NAME).write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _clear_scene_files(work: Path) -> None:
@@ -470,7 +501,10 @@ def _clear_scene_files(work: Path) -> None:
 
 
 def generate_scenes(
-    cfg: Config, prompts: list[str], work: Path, text: str = "Hello from Python",
+    cfg: Config,
+    prompts: list[str],
+    work: Path,
+    text: str = "Hello from Python",
 ) -> list[Path]:
     """Generate provider clips, or test-pattern clips in dry-run mode.
 
@@ -482,7 +516,8 @@ def generate_scenes(
         raise ValueError("TARGET_SECONDS must be between 30 and 60")
     if len(prompts) != expected_count:
         raise ValueError(
-            f"Expected {expected_count} AI scene prompts for a {cfg.target_seconds}-second video")
+            f"Expected {expected_count} AI scene prompts for a {cfg.target_seconds}-second video"
+        )
     if not cfg.dry_run and cfg.video_provider == "gemini" and not cfg.ai_video_key:
         raise RuntimeError("OMNI_API_KEY (or GEMINI_API_KEY) is required for AI video generation")
 
@@ -512,8 +547,11 @@ def generate_scenes(
         _write_manifest(work, cfg, prompts)
         return paths
     if len(pending) < len(paths):
-        log.info("Reusing %d cached scene clip(s); generating %d",
-                 len(paths) - len(pending), len(pending))
+        log.info(
+            "Reusing %d cached scene clip(s); generating %d",
+            len(paths) - len(pending),
+            len(pending),
+        )
 
     if cfg.dry_run:
         log.info("DRY_RUN=true; skipping paid video generation and creating placeholders")
@@ -528,10 +566,14 @@ def generate_scenes(
             f"${estimate:.2f} at 720p for {len(pending)} clip(s), but "
             f"AI_VIDEO_MAX_USD is ${cfg.ai_video_max_usd:.2f}. "
             "This is a preflight estimate, not a provider-enforced billing cap. "
-            "Increase the limit only after reviewing current Gemini pricing.")
+            "Increase the limit only after reviewing current Gemini pricing."
+        )
 
-    log.info("Generating %d AI scene(s) sequentially at 720p (estimated video cost: $%.2f)",
-             len(pending), estimate)
+    log.info(
+        "Generating %d AI scene(s) sequentially at 720p (estimated video cost: $%.2f)",
+        len(pending),
+        estimate,
+    )
     deadline = time.monotonic() + MAX_GENERATION_WAIT_SECONDS
     for index, prompt, path in pending:
         _generate_one(cfg, prompt, path, index, deadline)

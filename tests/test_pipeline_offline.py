@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 """Offline smoke test: no API keys or internet needed, only FFmpeg.
@@ -22,8 +23,10 @@ def ff(*args):
 @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
 class OfflinePipeline(unittest.TestCase):
     def test_group_words_and_timestamps(self):
-        words = [{"text": t, "start": i * 0.4, "end": i * 0.4 + 0.35}
-                 for i, t in enumerate("Did you know? Honey never spoils at all".split())]
+        words = [
+            {"text": t, "start": i * 0.4, "end": i * 0.4 + 0.35}
+            for i, t in enumerate("Did you know? Honey never spoils at all".split())
+        ]
         groups = captions.group_words(words)
         self.assertEqual(groups[0]["text"], "Did you know?")
         self.assertEqual(captions._ts(3725.456), "1:02:05.46")
@@ -34,10 +37,28 @@ class OfflinePipeline(unittest.TestCase):
             d = Path(d)
             ff("-f", "lavfi", "-i", "sine=frequency=220:duration=12", str(d / "voice.mp3"))
             # one landscape clip and one SHORT portrait AI-scene clip (forces loop path)
-            ff("-f", "lavfi", "-i", "testsrc=size=1280x720:rate=24:duration=6", "-pix_fmt", "yuv420p", str(d / "a.mp4"))
-            ff("-f", "lavfi", "-i", "testsrc2=size=720x1280:rate=25:duration=2", "-pix_fmt", "yuv420p", str(d / "b.mp4"))
+            ff(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=1280x720:rate=24:duration=6",
+                "-pix_fmt",
+                "yuv420p",
+                str(d / "a.mp4"),
+            )
+            ff(
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=720x1280:rate=25:duration=2",
+                "-pix_fmt",
+                "yuv420p",
+                str(d / "b.mp4"),
+            )
             dur = probe_duration(d / "voice.mp3")
-            words = _even_timings("Honey never spoils because it is low in water and acidic " * 2, dur)
+            words = _even_timings(
+                "Honey never spoils because it is low in water and acidic " * 2, dur
+            )
 
             out = d / "video.mp4"
             clips = [d / "a.mp4", d / "b.mp4"]
@@ -45,28 +66,71 @@ class OfflinePipeline(unittest.TestCase):
 
             self.assertTrue(out.exists())
             info = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                 "stream=width,height", "-of", "csv=p=0", str(out)],
-                capture_output=True, text=True, check=True).stdout.strip()
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "csv=p=0",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
             self.assertEqual(info, "1080,1920")
             rate = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                 "stream=r_frame_rate", "-of", "csv=p=0", str(out)],
-                capture_output=True, text=True, check=True).stdout.strip()
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=r_frame_rate",
+                    "-of",
+                    "csv=p=0",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
             self.assertEqual(rate, "30/1")
             self.assertAlmostEqual(probe_duration(out), dur, delta=0.6)
 
             def pixel(x, y):
                 return subprocess.run(
-                    ["ffmpeg", "-v", "error", "-ss", "1", "-i", str(out), "-frames:v", "1",
-                     "-vf", f"crop=1:1:{x}:{y},format=rgb24", "-f", "rawvideo", "-"],
-                    capture_output=True, check=True).stdout
+                    [
+                        "ffmpeg",
+                        "-v",
+                        "error",
+                        "-ss",
+                        "1",
+                        "-i",
+                        str(out),
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        f"crop=1:1:{x}:{y},format=rgb24",
+                        "-f",
+                        "rawvideo",
+                        "-",
+                    ],
+                    capture_output=True,
+                    check=True,
+                ).stdout
 
             if cfg.layout == "frame":
                 self.assertEqual(pixel(10, 10), b"\x00\x00\x00")
             else:
                 self.assertNotEqual(pixel(10, 10), b"\x00\x00\x00")
             self.assertNotEqual(pixel(540, 960), b"\x00\x00\x00")
+
 
 class RenderDesignTests(unittest.TestCase):
     def test_fullscreen_normalizes_to_30_fps_and_1080x1920(self):
@@ -106,7 +170,6 @@ class RenderDesignTests(unittest.TestCase):
         self.assertIn(r"\pos(540,1440)", content)
 
     def test_write_srt_exports_word_timings(self):
-        cfg = config.load()
         words = [
             {"text": "Hello", "start": 0.0, "end": 0.5},
             {"text": "world", "start": 0.5, "end": 1.0},

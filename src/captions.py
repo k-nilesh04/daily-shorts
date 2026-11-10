@@ -1,4 +1,5 @@
 """Build animated ASS captions and the minimal HUD for the square-frame or fullscreen layout."""
+
 import re
 from pathlib import Path
 
@@ -43,12 +44,14 @@ def group_words(words: list[dict], max_words: int = 3) -> list[dict]:
         groups.append(cur)
     out = []
     for g in groups:
-        out.append({
-            "text": " ".join(x["text"] for x in g),
-            "start": g[0]["start"],
-            "end": g[-1]["end"],
-            "words": g,
-        })
+        out.append(
+            {
+                "text": " ".join(x["text"] for x in g),
+                "start": g[0]["start"],
+                "end": g[-1]["end"],
+                "words": g,
+            }
+        )
     # keep captions on screen until the next one starts (no flicker)
     for a, b in zip(out, out[1:]):
         if 0 <= b["start"] - a["end"] < 0.4:
@@ -57,11 +60,12 @@ def group_words(words: list[dict], max_words: int = 3) -> list[dict]:
 
 
 def write_ass(cfg: Config, words: list[dict], path: Path) -> Path:
-    lines = [HEADER.format(w=cfg.width, h=cfg.height, font=cfg.caption_font,
-                           size=cfg.caption_size, margin_v=0)]
-    start = _ts(0)
-    end = _ts(max((word["end"] for word in words), default=0) + 1)
-    frame_x, frame_y, frame_size = cfg.frame_x, cfg.frame_y, cfg.frame_size
+    lines = [
+        HEADER.format(
+            w=cfg.width, h=cfg.height, font=cfg.caption_font, size=cfg.caption_size, margin_v=0
+        )
+    ]
+    frame_y, frame_size = cfg.frame_y, cfg.frame_size
     center_x = cfg.width // 2
 
     layout = getattr(cfg, "layout", "fullscreen")

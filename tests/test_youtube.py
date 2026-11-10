@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import tempfile
@@ -39,12 +40,14 @@ class CredentialTests(unittest.TestCase):
 
     def test_verify_fails_before_network_when_credentials_are_missing(self):
         with self.assertRaisesRegex(
-                RuntimeError, "YT_CLIENT_ID.*YT_CLIENT_SECRET.*YT_REFRESH_TOKEN"):
+            RuntimeError, "YT_CLIENT_ID.*YT_CLIENT_SECRET.*YT_REFRESH_TOKEN"
+        ):
             verify(Config(yt_client_id="", yt_client_secret="", yt_refresh_token=""))
 
     def test_expired_refresh_token_message_explains_fix(self):
         message = _refresh_error_message(
-            RefreshError("invalid_grant: Token has been expired or revoked."))
+            RefreshError("invalid_grant: Token has been expired or revoked.")
+        )
         self.assertIn("get_youtube_token.py", message)
         self.assertIn("7 days", message)
 
@@ -64,8 +67,7 @@ class VerifyTests(unittest.TestCase):
     @patch("src.youtube.build")
     @patch("src.youtube.Request")
     @patch("src.youtube._credentials")
-    def test_verify_refreshes_token_and_returns_channel_title(
-            self, credentials, request, build):
+    def test_verify_refreshes_token_and_returns_channel_title(self, credentials, request, build):
         credentials.return_value.refresh.return_value = None
         build.return_value.channels.return_value.list.return_value.execute.return_value = {
             "items": [{"snippet": {"title": "My Channel"}}],
@@ -78,10 +80,10 @@ class VerifyTests(unittest.TestCase):
     @patch("src.youtube.build")
     @patch("src.youtube.Request")
     @patch("src.youtube._credentials")
-    def test_verify_maps_expired_refresh_token(
-            self, credentials, request, build):
+    def test_verify_maps_expired_refresh_token(self, credentials, request, build):
         credentials.return_value.refresh.side_effect = RefreshError(
-            "invalid_grant: Token has been expired or revoked.")
+            "invalid_grant: Token has been expired or revoked."
+        )
 
         with self.assertRaisesRegex(RuntimeError, "get_youtube_token.py"):
             verify(_cfg())
@@ -91,8 +93,7 @@ class UploadTests(unittest.TestCase):
     @patch("src.youtube.MediaFileUpload")
     @patch("src.youtube.build")
     @patch("src.youtube._credentials")
-    def test_upload_maps_expired_refresh_token(
-            self, credentials, build, media):
+    def test_upload_maps_expired_refresh_token(self, credentials, build, media):
         request = build.return_value.videos.return_value.insert.return_value
         request.next_chunk.side_effect = RefreshError("invalid_grant")
 
@@ -100,8 +101,7 @@ class UploadTests(unittest.TestCase):
             video = Path(temp_dir) / "video.mp4"
             video.write_bytes(b"video")
             with self.assertRaisesRegex(RuntimeError, "get_youtube_token.py"):
-                upload(_cfg(), video,
-                       {"title": "t", "description": "d", "tags": [], "topic": "x"})
+                upload(_cfg(), video, {"title": "t", "description": "d", "tags": [], "topic": "x"})
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Step 4 - assemble the final 1080x1920 MP4 with FFmpeg."""
+
 import subprocess
 from pathlib import Path
 
@@ -13,7 +14,8 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
     except FileNotFoundError as error:
         raise RuntimeError(
             "ffmpeg was not found; install FFmpeg and add it to PATH "
-            "(https://ffmpeg.org/download.html)") from error
+            "(https://ffmpeg.org/download.html)"
+        ) from error
     if res.returncode != 0:
         log.error("FFmpeg failed:\n%s", res.stderr[-2500:])
         raise RuntimeError(f"ffmpeg failed ({' '.join(cmd)})")
@@ -24,22 +26,47 @@ def _normalize_filter(cfg: Config) -> str:
     if cfg.layout == "frame":
         size = cfg.frame_size
         overscan = int(size * 1.08)
-        return (f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
-                f"crop={overscan}:{overscan},"
-                f"zoompan=z='min(zoom+0.00035,1.08)':"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p")
+        return (
+            f"scale={overscan}:{overscan}:force_original_aspect_ratio=increase,"
+            f"crop={overscan}:{overscan},"
+            f"zoompan=z='min(zoom+0.00035,1.08)':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d=1:s={size}x{size}:fps={cfg.fps},setsar=1,format=yuv420p"
+        )
     # Fullscreen 9:16 vertical video (1080x1920) at the configured frame rate.
-    return (f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
-            f"crop={cfg.width}:{cfg.height},"
-            f"fps={cfg.fps},setsar=1,format=yuv420p")
+    return (
+        f"scale={cfg.width}:{cfg.height}:force_original_aspect_ratio=increase,"
+        f"crop={cfg.width}:{cfg.height},"
+        f"fps={cfg.fps},setsar=1,format=yuv420p"
+    )
 
 
 def _normalize(cfg: Config, src: Path, dst: Path, seconds: float) -> None:
     """Scale and crop each source clip to exact length, resolution, and fps."""
-    run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(src),
-         "-t", f"{seconds:.3f}", "-vf", _normalize_filter(cfg), "-an",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", str(dst)])
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(src),
+            "-t",
+            f"{seconds:.3f}",
+            "-vf",
+            _normalize_filter(cfg),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            str(dst),
+        ]
+    )
 
 
 def _presentation_filter(cfg: Config, duration: float) -> str:
@@ -81,8 +108,15 @@ def _presentation_filter(cfg: Config, duration: float) -> str:
     )
 
 
-def build(cfg: Config, clips: list[Path], voice: Path,
-          duration: float, words: list[dict], out: Path, work: Path) -> Path:
+def build(
+    cfg: Config,
+    clips: list[Path],
+    voice: Path,
+    duration: float,
+    words: list[dict],
+    out: Path,
+    work: Path,
+) -> Path:
     if not clips:
         raise ValueError("render.build needs at least one video clip")
     if duration <= 0:
@@ -108,30 +142,104 @@ def build(cfg: Config, clips: list[Path], voice: Path,
 
     concat_list = work / "concat.txt"
     concat_list.write_text("".join(f"file '{p.name}'\n" for p in parts), encoding="utf-8")
-    visual = work / "visual.mp4"
-    run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-         "-i", "concat.txt", "-c", "copy", "visual.mp4"], cwd=work)
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            "concat.txt",
+            "-c",
+            "copy",
+            "visual.mp4",
+        ],
+        cwd=work,
+    )
 
     write_ass(cfg, words, work / "captions.ass")
     out.parent.mkdir(parents=True, exist_ok=True)
     layout = getattr(cfg, "layout", "fullscreen")
     if layout == "frame":
-        run(["ffmpeg", "-y", "-loglevel", "error",
-             "-f", "lavfi", "-i", f"color=c=black:s={cfg.width}x{cfg.height}:r={cfg.fps}:d={duration:.3f}",
-             "-i", "visual.mp4", "-i", str(voice.resolve()),
-             "-filter_complex", _presentation_filter(cfg, duration),
-             "-map", "[vout]", "-map", "2:a",
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-             "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
-             str(out.resolve())], cwd=work)
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c=black:s={cfg.width}x{cfg.height}:r={cfg.fps}:d={duration:.3f}",
+                "-i",
+                "visual.mp4",
+                "-i",
+                str(voice.resolve()),
+                "-filter_complex",
+                _presentation_filter(cfg, duration),
+                "-map",
+                "[vout]",
+                "-map",
+                "2:a",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "22",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "160k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+                str(out.resolve()),
+            ],
+            cwd=work,
+        )
     else:
         # Fullscreen 9:16 layout with burned-in animated subtitles
-        run(["ffmpeg", "-y", "-loglevel", "error",
-             "-i", "visual.mp4", "-i", str(voice.resolve()),
-             "-vf", "ass=captions.ass",
-             "-map", "0:v", "-map", "1:a",
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
-             "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
-             str(out.resolve())], cwd=work)
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                "visual.mp4",
+                "-i",
+                str(voice.resolve()),
+                "-vf",
+                "ass=captions.ass",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "22",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "160k",
+                "-shortest",
+                "-movflags",
+                "+faststart",
+                str(out.resolve()),
+            ],
+            cwd=work,
+        )
     log.info("Rendered %s (%.1f MB)", out.name, out.stat().st_size / 1e6)
     return out

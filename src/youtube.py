@@ -1,4 +1,5 @@
 """Step 5 - upload to YouTube with the Data API v3 (OAuth refresh token)."""
+
 import time
 from pathlib import Path
 
@@ -111,7 +112,8 @@ def verify(cfg: Config) -> str:
     missing = missing_credentials(cfg)
     if missing:
         raise RuntimeError(
-            "Missing YouTube upload credentials: " + ", ".join(missing)
+            "Missing YouTube upload credentials: "
+            + ", ".join(missing)
             + ". Add them as repository Actions secrets."
         )
     creds = _credentials(cfg)
@@ -158,8 +160,10 @@ def verify(cfg: Config) -> str:
         content = getattr(error, "content", b"") or b""
         text = (content.decode("utf-8", "ignore") + " " + str(error)).lower()
         if status == 403 and "insufficient" in text:
-            log.info("YouTube credentials verified (upload scope present; "
-                     "read scope not available, so channel name skipped).")
+            log.info(
+                "YouTube credentials verified (upload scope present; "
+                "read scope not available, so channel name skipped)."
+            )
             return "(upload scope verified)"
         raise RuntimeError(_http_error_message(error)) from error
     items = response.get("items") or []
@@ -178,7 +182,8 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
     missing = missing_credentials(cfg)
     if missing:
         raise RuntimeError(
-            "Missing YouTube upload credentials: " + ", ".join(missing)
+            "Missing YouTube upload credentials: "
+            + ", ".join(missing)
             + ". Add them as repository Actions secrets."
         )
     creds = _credentials(cfg)
@@ -204,8 +209,9 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
             "selfDeclaredMadeForKids": False,
         },
     }
-    media = MediaFileUpload(str(video), mimetype="video/mp4", resumable=True,
-                            chunksize=8 * 1024 * 1024)
+    media = MediaFileUpload(
+        str(video), mimetype="video/mp4", resumable=True, chunksize=8 * 1024 * 1024
+    )
     req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
 
     response, attempt = None, 0
@@ -219,7 +225,7 @@ def upload(cfg: Config, video: Path, meta: dict) -> str:
         except HttpError as e:
             if e.resp.status in (500, 502, 503, 504) and attempt < 5:
                 attempt += 1
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
                 continue
             raise RuntimeError(_http_error_message(e)) from e
     vid = response["id"]
@@ -248,7 +254,11 @@ def upload_thumbnail(cfg: Config, video_id: str, thumbnail: Path) -> bool:
         log.info("Thumbnail uploaded for video %s", video_id)
         return True
     except HttpError as error:
-        log.warning("Thumbnail upload failed (HTTP %s): %s", getattr(getattr(error, "resp", None), "status", "?"), error)
+        log.warning(
+            "Thumbnail upload failed (HTTP %s): %s",
+            getattr(getattr(error, "resp", None), "status", "?"),
+            error,
+        )
         return False
     except Exception as error:  # noqa: BLE001
         log.warning("Thumbnail upload failed: %s", error)
@@ -262,9 +272,11 @@ def _main() -> int:
     from . import config
 
     parser = argparse.ArgumentParser(
-        description="Validate YouTube upload credentials without uploading.")
-    parser.add_argument("--verify", action="store_true",
-                        help="refresh the OAuth token and confirm channel access")
+        description="Validate YouTube upload credentials without uploading."
+    )
+    parser.add_argument(
+        "--verify", action="store_true", help="refresh the OAuth token and confirm channel access"
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if not args.verify:

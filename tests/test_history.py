@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import json
@@ -29,10 +30,12 @@ class HistoryTests(unittest.TestCase):
     def test_append_keeps_at_most_500_entries(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "history.json"
-            path.write_text(json.dumps([
-                {"topic": f"topic {index}", "title": f"Title {index}"}
-                for index in range(505)
-            ]), encoding="utf-8")
+            path.write_text(
+                json.dumps(
+                    [{"topic": f"topic {index}", "title": f"Title {index}"} for index in range(505)]
+                ),
+                encoding="utf-8",
+            )
 
             append(path, "new topic", "New Title", None)
 
@@ -43,9 +46,16 @@ class HistoryTests(unittest.TestCase):
     def test_recent_topics_returns_the_latest(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "history.json"
-            path.write_text(json.dumps([
-                {"topic": "one"}, {"topic": "two"}, {"topic": "three"},
-            ]), encoding="utf-8")
+            path.write_text(
+                json.dumps(
+                    [
+                        {"topic": "one"},
+                        {"topic": "two"},
+                        {"topic": "three"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
 
             self.assertEqual(recent_topics(path, n=2), ["two", "three"])
 

@@ -1,4 +1,5 @@
 """Send email notifications via Gmail SMTP on pipeline events."""
+
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText

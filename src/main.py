@@ -1,4 +1,5 @@
 """Daily pipeline:  script -> voice -> AI video -> render -> (upload) -> history."""
+
 import argparse
 import json
 import logging
@@ -6,9 +7,19 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import captions, config, history, notify, render, script_gen, thumbnail, tts, video_gen, youtube
+from . import (
+    captions,
+    config,
+    history,
+    notify,
+    render,
+    script_gen,
+    thumbnail,
+    tts,
+    video_gen,
+    youtube,
+)
 from .util import log
-
 
 NARRATION_OVERRUN_TOLERANCE_SECONDS = 5
 NARRATION_UNDERRUN_TOLERANCE_RATIO = 0.15
@@ -37,7 +48,10 @@ def _validate_narration_duration(duration: float, target_seconds: int) -> None:
     if 0 < duration < min_duration:
         log.warning(
             "Narration is %.1fs, below the %.1fs target window; the final video "
-            "will be shorter than requested.", duration, float(target_seconds))
+            "will be shorter than requested.",
+            duration,
+            float(target_seconds),
+        )
 
 
 def _prepare_work_dir(work: Path) -> None:
@@ -72,11 +86,13 @@ def main() -> int:
 def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace) -> None:
     if do_upload:
         missing = [
-            name for name, value in (
+            name
+            for name, value in (
                 ("YT_CLIENT_ID", cfg.yt_client_id),
                 ("YT_CLIENT_SECRET", cfg.yt_client_secret),
                 ("YT_REFRESH_TOKEN", cfg.yt_refresh_token),
-            ) if not value
+            )
+            if not value
         ]
         if missing:
             raise RuntimeError(
@@ -112,8 +128,9 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
         except RuntimeError:
             if attempt == MAX_SCRIPT_ATTEMPTS - 1:
                 raise
-            log.warning("TTS failed; regenerating script (attempt %d/%d)",
-                        attempt + 2, MAX_SCRIPT_ATTEMPTS)
+            log.warning(
+                "TTS failed; regenerating script (attempt %d/%d)", attempt + 2, MAX_SCRIPT_ATTEMPTS
+            )
             continue
         last_duration = duration
         try:
@@ -132,8 +149,11 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
                 if trimmed_script and trimmed_script != meta["script"]:
                     log.warning(
                         "Hard-trimming script from %d to %d words to force a "
-                        "%ds-or-shorter narration.", word_count, target_words,
-                        cfg.target_seconds)
+                        "%ds-or-shorter narration.",
+                        word_count,
+                        target_words,
+                        cfg.target_seconds,
+                    )
                     try:
                         duration, words = tts.synthesize(cfg, trimmed_script, voice)
                         meta["script"] = trimmed_script
@@ -145,8 +165,10 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
                 # Final resort: trim the audio and captions to TARGET_SECONDS so
                 # the run completes instead of aborting on an overlong narration.
                 log.warning(
-                    "Trimming narration audio to %.1fs to keep the video at or "
-                    "below %d seconds.", cfg.target_seconds, cfg.target_seconds)
+                    "Trimming narration audio to %.1fs to keep the video at or below %d seconds.",
+                    cfg.target_seconds,
+                    cfg.target_seconds,
+                )
                 tts.trim_audio(voice, cfg.target_seconds)
                 duration = tts.probe_duration(voice)
                 words = tts.trim_words(words, cfg.target_seconds)
@@ -158,8 +180,9 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
                 except RuntimeError:
                     pass
                 log.warning(
-                    "Narration is %.1fs after trimming; continuing with a shorter "
-                    "video.", last_duration)
+                    "Narration is %.1fs after trimming; continuing with a shorter video.",
+                    last_duration,
+                )
             # Aggressive correction: target ~85% of the measured words so the
             # next narration lands comfortably under the limit.
             if duration > cfg.target_seconds:
@@ -169,8 +192,13 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
             log.warning(
                 "Narration is %.1fs for %d words (%.2f words/s); regenerating "
                 "with %.2f words/s (attempt %d/%d): %s",
-                duration, word_count, measured, words_per_second,
-                attempt + 2, MAX_SCRIPT_ATTEMPTS, error,
+                duration,
+                word_count,
+                measured,
+                words_per_second,
+                attempt + 2,
+                MAX_SCRIPT_ATTEMPTS,
+                error,
             )
     else:
         # Loop exhausted without break: validate the last measurement to raise.
@@ -180,8 +208,7 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
     # 3. Generate the configured video asset(s).
     is_json2video = cfg.video_provider == "json2video"
     estimated_cost = (
-        None if is_json2video
-        else round(video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2)
+        None if is_json2video else round(video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2)
     )
     meta["video_generation"] = {
         "provider": cfg.video_provider,
@@ -194,7 +221,9 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
     meta_path = cfg.output_dir / "meta.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     clips = video_gen.generate_scenes(
-        cfg, meta["scene_prompts"], cfg.work_dir / "scenes",
+        cfg,
+        meta["scene_prompts"],
+        cfg.work_dir / "scenes",
         text=meta.get("title", "Hello from Python"),
     )
 
@@ -208,7 +237,9 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
     # 4b. generate thumbnail (non-fatal)
     thumb_path = cfg.output_dir / "thumbnail.jpg"
     thumb = thumbnail.generate(
-        cfg, meta.get("title", "Daily Short"), meta.get("script", ""),
+        cfg,
+        meta.get("title", "Daily Short"),
+        meta.get("script", ""),
         thumb_path,
     )
 

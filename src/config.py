@@ -1,5 +1,6 @@
 """Central configuration. Everything is driven by environment variables so the
 same code runs locally and in GitHub Actions."""
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,8 +25,12 @@ def _env(name: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class Config:
     # content
-    niche: str = field(default_factory=lambda: _env(
-        "NICHE", "Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations"))
+    niche: str = field(
+        default_factory=lambda: _env(
+            "NICHE",
+            "Funny 3D animated short stories with cute characters (cute babies, funny cats, mischievous pets) in entertaining comedy situations",
+        )
+    )
     language: str = field(default_factory=lambda: _env("LANGUAGE", "Hinglish"))
     tts_voice: str = field(default_factory=lambda: _env("TTS_VOICE", "hi-IN-MadhurNeural"))
     tts_rate: str = field(default_factory=lambda: _env("TTS_RATE", "+0%"))
@@ -35,13 +40,17 @@ class Config:
     # project can switch to another supported model without a code change.
     omni_model: str = field(default_factory=lambda: _env("OMNI_MODEL", "gemini-omni-1.2-flash"))
     # Model used for thumbnail generation (Gemini image generation / nano banana).
-    thumbnail_model: str = field(default_factory=lambda: _env("THUMBNAIL_MODEL", "gemini-2.0-flash-exp"))
+    thumbnail_model: str = field(
+        default_factory=lambda: _env("THUMBNAIL_MODEL", "gemini-2.0-flash-exp")
+    )
 
     # video
     width: int = 1080
     height: int = 1920
     fps: int = 30
-    layout: str = field(default_factory=lambda: _env("LAYOUT", "fullscreen"))  # 'fullscreen' or 'frame'
+    layout: str = field(
+        default_factory=lambda: _env("LAYOUT", "fullscreen")
+    )  # 'fullscreen' or 'frame'
     caption_font: str = field(default_factory=lambda: _env("CAPTION_FONT", "DejaVu Sans"))
     caption_size: int = field(default_factory=lambda: int(_env("CAPTION_SIZE", "78")))
     caption_upper: bool = field(default_factory=lambda: _bool("CAPTION_UPPER", False))
@@ -99,14 +108,14 @@ class Config:
             raise ValueError(
                 f"VIDEO_PROVIDER must be 'gemini' or 'json2video' "
                 f"(got {self.video_provider!r}). Check your GitHub Variable "
-                f"VIDEO_PROVIDER under Settings -> Secrets and variables -> Actions -> Variables.")
+                f"VIDEO_PROVIDER under Settings -> Secrets and variables -> Actions -> Variables."
+            )
         object.__setattr__(self, "layout", self.layout.lower().strip())
         if self.layout not in {"fullscreen", "frame"}:
             raise ValueError(f"LAYOUT must be 'fullscreen' or 'frame' (got {self.layout!r})")
         object.__setattr__(self, "privacy_status", self.privacy_status.lower().strip())
         if self.privacy_status not in {"private", "unlisted", "public"}:
-            raise ValueError(
-                "PRIVACY_STATUS must be 'private', 'unlisted', or 'public'")
+            raise ValueError("PRIVACY_STATUS must be 'private', 'unlisted', or 'public'")
         if self.ai_video_max_usd < 0:
             raise ValueError("AI_VIDEO_MAX_USD must be zero or greater")
 

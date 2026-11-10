@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import tempfile
@@ -74,10 +75,14 @@ class MainPipelineTests(unittest.TestCase):
                 output_dir=root / "output",
                 history_file=root / "data" / "history.json",
             )
-            with patch("src.main.config.load", return_value=cfg), \
-                    patch("src.main.argparse.ArgumentParser.parse_args",
-                          return_value=SimpleNamespace(upload=False)), \
-                    patch("src.main.script_gen.generate") as generate_mock:
+            with (
+                patch("src.main.config.load", return_value=cfg),
+                patch(
+                    "src.main.argparse.ArgumentParser.parse_args",
+                    return_value=SimpleNamespace(upload=False),
+                ),
+                patch("src.main.script_gen.generate") as generate_mock,
+            ):
                 with self.assertRaisesRegex(RuntimeError, "YT_CLIENT_ID"):
                     main()
 
@@ -98,18 +103,28 @@ class MainPipelineTests(unittest.TestCase):
                 output_dir=root / "output",
                 history_file=root / "data" / "history.json",
             )
-            with patch("src.main.config.load", return_value=cfg), \
-                    patch("src.main.argparse.ArgumentParser.parse_args",
-                          return_value=SimpleNamespace(upload=False)), \
-                    patch("src.main.youtube.verify") as verify_mock, \
-                    patch("src.main.script_gen.generate",
-                          return_value={"script": "story", "topic": "topic",
-                                        "title": "Title", "description": "Description",
-                                        "scene_prompts": ["p1", "p2", "p3"]}), \
-                    patch("src.main.tts.synthesize", return_value=(45.0, [])), \
-                    patch("src.main.video_gen.generate_scenes"), \
-                    patch("src.main.render.build"), \
-                    patch("src.main.youtube.upload", return_value="video-id") as upload_mock:
+            with (
+                patch("src.main.config.load", return_value=cfg),
+                patch(
+                    "src.main.argparse.ArgumentParser.parse_args",
+                    return_value=SimpleNamespace(upload=False),
+                ),
+                patch("src.main.youtube.verify") as verify_mock,
+                patch(
+                    "src.main.script_gen.generate",
+                    return_value={
+                        "script": "story",
+                        "topic": "topic",
+                        "title": "Title",
+                        "description": "Description",
+                        "scene_prompts": ["p1", "p2", "p3"],
+                    },
+                ),
+                patch("src.main.tts.synthesize", return_value=(45.0, [])),
+                patch("src.main.video_gen.generate_scenes"),
+                patch("src.main.render.build"),
+                patch("src.main.youtube.upload", return_value="video-id") as upload_mock,
+            ):
                 self.assertEqual(main(), 0)
 
             verify_mock.assert_called_once_with(cfg)

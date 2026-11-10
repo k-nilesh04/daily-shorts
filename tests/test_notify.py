@@ -1,14 +1,14 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import smtplib
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from src.config import Config
-from src.notify import _send_email, notify_success, notify_failure, notify_dry_run
+from src.notify import _send_email, notify_dry_run, notify_failure, notify_success
 
 
 class NotifyTests(unittest.TestCase):
@@ -17,7 +17,11 @@ class NotifyTests(unittest.TestCase):
         self.assertFalse(_send_email(cfg, "subj", "body"))
 
     def test_send_returns_true_on_success(self):
-        cfg = Config(gmail_address="test@gmail.com", gmail_app_password="apppass", notify_email="recv@example.com")
+        cfg = Config(
+            gmail_address="test@gmail.com",
+            gmail_app_password="apppass",
+            notify_email="recv@example.com",
+        )
         with patch("src.notify.smtplib.SMTP") as smtp_mock:
             server = smtp_mock.return_value.__enter__.return_value
             self.assertTrue(_send_email(cfg, "subj", "body"))

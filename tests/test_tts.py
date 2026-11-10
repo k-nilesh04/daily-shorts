@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import subprocess
@@ -20,8 +21,7 @@ class ProbeDurationTests(unittest.TestCase):
 
     @patch("src.tts.subprocess.run")
     def test_reports_ffprobe_failure(self, run):
-        run.side_effect = subprocess.CalledProcessError(
-            1, ["ffprobe"], stderr="invalid data")
+        run.side_effect = subprocess.CalledProcessError(1, ["ffprobe"], stderr="invalid data")
         with self.assertRaisesRegex(RuntimeError, "could not read.*invalid data"):
             probe_duration(Path("voice.mp3"))
 

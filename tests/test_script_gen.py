@@ -1,4 +1,5 @@
 import os
+
 os.environ["DRY_RUN"] = "false"
 os.environ.pop("VIDEO_PROVIDER", None)
 import json
@@ -95,8 +96,7 @@ class ScriptGenerationTests(unittest.TestCase):
     @patch("src.script_gen.genai.Client")
     def test_json_generation_uses_v1beta(self, client_factory):
         client = client_factory.return_value
-        client.models.generate_content.return_value = SimpleNamespace(
-            text=json.dumps(payload()))
+        client.models.generate_content.return_value = SimpleNamespace(text=json.dumps(payload()))
 
         result = generate(Config(gemini_key="test-key"), [])
 
@@ -134,8 +134,7 @@ class ScriptGenerationTests(unittest.TestCase):
         max_words = word_budget(45)[2]
         overlong = payload(script=" ".join(["story"] * (max_words + 30)))
         client = client_factory.return_value
-        client.models.generate_content.return_value = SimpleNamespace(
-            text=json.dumps(overlong))
+        client.models.generate_content.return_value = SimpleNamespace(text=json.dumps(overlong))
 
         result = generate(Config(gemini_key="test-key"), [])
 

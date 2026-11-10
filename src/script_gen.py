@@ -1,4 +1,5 @@
 """Step 1 - ask Gemini for the video script + YouTube metadata as strict JSON."""
+
 import json
 import math
 import re
@@ -10,7 +11,13 @@ from .config import Config
 from .util import log, retry
 
 REQUIRED = {
-    "topic", "title", "script", "description", "tags", "keywords", "scene_prompts",
+    "topic",
+    "title",
+    "script",
+    "description",
+    "tags",
+    "keywords",
+    "scene_prompts",
 }
 
 # Measured with edge-tts 7.3.1, voice hi-IN-MadhurNeural, rate +0%:
@@ -24,7 +31,9 @@ OVERRUN_ALLOWANCE_SECONDS = 2
 MAX_GENERATE_ATTEMPTS = 3
 
 
-def word_budget(target_seconds: int, words_per_second: float = WORDS_PER_SECOND) -> tuple[int, int, int]:
+def word_budget(
+    target_seconds: int, words_per_second: float = WORDS_PER_SECOND
+) -> tuple[int, int, int]:
     """Return (min_words, target_words, max_words) for the requested duration.
 
     The maximum is derived from the largest narration the renderer accepts, so a
@@ -56,7 +65,9 @@ def _trim_to_word_limit(script: str, max_words: int) -> str:
     return truncated.rstrip(",;:- ") + "."
 
 
-def _prompt(cfg: Config, avoid: list[str], correction: str = "", words_per_second: float = WORDS_PER_SECOND) -> str:
+def _prompt(
+    cfg: Config, avoid: list[str], correction: str = "", words_per_second: float = WORDS_PER_SECOND
+) -> str:
     min_words, target_words, max_words = word_budget(cfg.target_seconds, words_per_second)
     avoid_txt = "\n".join(f"- {t}" for t in avoid[-60:]) or "- (none yet)"
     scene_count = math.ceil(cfg.target_seconds / SECONDS_PER_SCENE)
@@ -115,7 +126,8 @@ def _response_text(response) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValueError(
             "Gemini returned no text content; the response may have been blocked "
-            "by safety filters or returned empty")
+            "by safety filters or returned empty"
+        )
     return text
 
 
@@ -128,7 +140,8 @@ def _parse(text: str, scene_count: int, max_words: int) -> dict:
     except json.JSONDecodeError as error:
         raise ValueError(
             f"Gemini returned invalid JSON at line {error.lineno}, "
-            f"column {error.colno}: {error.msg}") from error
+            f"column {error.colno}: {error.msg}"
+        ) from error
     if not isinstance(data, dict):
         raise ValueError(f"Gemini JSON must be an object, got {type(data).__name__}")
     missing = REQUIRED - set(data)
@@ -138,17 +151,23 @@ def _parse(text: str, scene_count: int, max_words: int) -> dict:
         value = data[key]
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Gemini JSON '{key}' must be a non-empty string")
-    if (not isinstance(data["tags"], list) or not data["tags"]
-            or not all(isinstance(tag, str) and tag.strip() for tag in data["tags"])):
+    if (
+        not isinstance(data["tags"], list)
+        or not data["tags"]
+        or not all(isinstance(tag, str) and tag.strip() for tag in data["tags"])
+    ):
         raise ValueError("Gemini JSON 'tags' must be a non-empty list of strings")
-    if (not isinstance(data["keywords"], list) or not data["keywords"]
-            or not all(isinstance(word, str) and word.strip()
-                       for word in data["keywords"])):
+    if (
+        not isinstance(data["keywords"], list)
+        or not data["keywords"]
+        or not all(isinstance(word, str) and word.strip() for word in data["keywords"])
+    ):
         raise ValueError("Gemini JSON 'keywords' must be a non-empty list of strings")
-    if (not isinstance(data["scene_prompts"], list)
-            or len(data["scene_prompts"]) != scene_count
-            or not all(isinstance(prompt, str) and prompt.strip()
-                       for prompt in data["scene_prompts"])):
+    if (
+        not isinstance(data["scene_prompts"], list)
+        or len(data["scene_prompts"]) != scene_count
+        or not all(isinstance(prompt, str) and prompt.strip() for prompt in data["scene_prompts"])
+    ):
         raise ValueError(f"scene_prompts must contain exactly {scene_count} non-empty prompts")
 
     data["topic"] = data["topic"].strip()[:120]
@@ -216,17 +235,26 @@ def generate(cfg: Config, avoid: list[str], words_per_second: float = WORDS_PER_
                 log.warning(
                     "Gemini script has %d words (limit %d) after %d attempts. "
                     "Auto-trimming to %d words.",
-                    error.actual_words, max_words, MAX_GENERATE_ATTEMPTS, max_words,
+                    error.actual_words,
+                    max_words,
+                    MAX_GENERATE_ATTEMPTS,
+                    max_words,
                 )
                 trimmed = _auto_trim(resp, scene_count, max_words)
                 if trimmed is None:
                     raise error
-                log.info("Script auto-trimmed to %d words: %s",
-                         len(trimmed["script"].split()), trimmed["title"])
+                log.info(
+                    "Script auto-trimmed to %d words: %s",
+                    len(trimmed["script"].split()),
+                    trimmed["title"],
+                )
                 return trimmed
             log.warning(
                 "Gemini script has %d words (limit %d). Requesting a shorter rewrite (%d/%d)",
-                error.actual_words, max_words, attempt + 1, MAX_GENERATE_ATTEMPTS - 1,
+                error.actual_words,
+                max_words,
+                attempt + 1,
+                MAX_GENERATE_ATTEMPTS - 1,
             )
             prompt = _prompt(
                 cfg,
@@ -245,10 +273,13 @@ def generate(cfg: Config, avoid: list[str], words_per_second: float = WORDS_PER_
             if attempt == MAX_GENERATE_ATTEMPTS - 1:
                 raise RuntimeError(
                     f"Gemini did not return a valid script after "
-                    f"{MAX_GENERATE_ATTEMPTS} attempts: {error}") from error
+                    f"{MAX_GENERATE_ATTEMPTS} attempts: {error}"
+                ) from error
             log.warning(
                 "Gemini response was invalid (%s). Requesting a corrected response (%d/%d)",
-                error, attempt + 1, MAX_GENERATE_ATTEMPTS - 1,
+                error,
+                attempt + 1,
+                MAX_GENERATE_ATTEMPTS - 1,
             )
             prompt = _prompt(
                 cfg,
