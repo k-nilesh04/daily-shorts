@@ -95,7 +95,7 @@ class GenerateTests(unittest.TestCase):
         cfg = Config(gemini_key="test-key", thumbnail_model="custom-thumb-model")
         with tempfile.TemporaryDirectory() as temp_dir:
             generate(cfg, "Title", "Script", Path(temp_dir) / "thumb.jpg")
-        call = client.models.generate_content.call_args
+        call = client.models.generate_content.call_args_list[0]
         self.assertEqual(call.kwargs["model"], "custom-thumb-model")
 
     @patch("src.thumbnail.genai.Client")
@@ -106,7 +106,7 @@ class GenerateTests(unittest.TestCase):
         cfg = Config(gemini_key="test-key", thumbnail_model="")
         with tempfile.TemporaryDirectory() as temp_dir:
             generate(cfg, "Title", "Script", Path(temp_dir) / "thumb.jpg")
-        call = client.models.generate_content.call_args
+        call = client.models.generate_content.call_args_list[0]
         self.assertEqual(call.kwargs["model"], "gemini-2.0-flash-exp")
 
 

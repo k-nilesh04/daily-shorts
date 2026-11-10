@@ -1,5 +1,4 @@
 """Generate a YouTube thumbnail from the script using Gemini image generation (nano banana)."""
-
 import base64
 from pathlib import Path
 
@@ -9,9 +8,15 @@ from google.genai import errors, types
 from .config import Config
 from .util import log
 
+
 THUMBNAIL_WIDTH = 1280
 THUMBNAIL_HEIGHT = 720
-THUMBNAIL_MODEL_DEFAULT = "gemini-2.0-flash-exp"
+# Models to try in order (nano banana / Gemini image generation)
+THUMBNAIL_MODELS = [
+    "gemini-2.0-flash-exp",
+    "gemini-2.5-flash-preview-image-generation",
+    "gemini-2.0-flash",
+]
 
 
 def _build_prompt(title: str, script: str) -> str:
@@ -40,35 +45,68 @@ def generate(
     """Generate a thumbnail image and save it to ``out``.
 
     Returns the output path on success, or ``None`` if generation failed
-    (non-fatal — the upload proceeds without a custom thumbnail).
+    (non-fatal -- the upload proceeds without a custom thumbnail).
     """
-    model = getattr(cfg, "thumbnail_model", None) or THUMBNAIL_MODEL_DEFAULT
+    configured = getattr(cfg, "thumbnail_model", "") or ""
+    if configured:
+        models_to_try = [configured] + [m for m in THUMBNAIL_MODELS if m != configured]
+    else:
+        models_to_try = list(THUMBNAIL_MODELS)
+
+    # Also try the gemini image generation model name
+    if "gemini-2.5-flash-image" not in models_to_try:
+        models_to_try.append("gemini-2.5-flash-image")
+
     if not cfg.gemini_key:
-        log.warning("No Gemini API key — skipping thumbnail generation")
+        log.warning("No Gemini API key -- skipping thumbnail generation")
         return None
 
     prompt = _build_prompt(title, script)
     client = genai.Client(api_key=cfg.gemini_key)
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-            ),
-        )
-    except errors.APIError as error:
-        log.warning(
-            "Thumbnail generation failed (HTTP %s: %s). Skipping thumbnail.",
-            error.code,
-            error.message,
-        )
+
+    response = None
+    last_error = None
+    for model in models_to_try:
+        try:
+            log.info("Trying thumbnail model: %s", model)
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
+                ),
+            )
+            # Check if response contains an image
+            has_image = False
+            for candidate in getattr(response, "candidates", []) or []:
+                content = getattr(candidate, "content", None)
+                for part in getattr(content, "parts", []) or []:
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        has_image = True
+                        break
+                if has_image:
+                    break
+            if has_image:
+                log.info("Thumbnail generated successfully with model: %s", model)
+                break
+            else:
+                log.warning("Model %s returned no image, trying next...", model)
+                response = None
+        except errors.APIError as error:
+            log.warning("Thumbnail model %s failed (HTTP %s: %s)", model, error.code, error.message)
+            last_error = error
+            response = None
+        except Exception as error:  # noqa: BLE001
+            log.warning("Thumbnail model %s failed: %s", model, error)
+            last_error = error
+            response = None
+
+    client.close()
+
+    if response is None:
+        log.warning("All thumbnail models failed. Last error: %s. Skipping thumbnail.", last_error)
         return None
-    except Exception as error:  # noqa: BLE001
-        log.warning("Thumbnail generation failed (%s). Skipping thumbnail.", error)
-        return None
-    finally:
-        client.close()
 
     # Extract image bytes from the response
     image_bytes = None
@@ -102,10 +140,8 @@ def generate(
 
     # Resize to 1280x720 if Pillow is available
     try:
-        import io
-
         from PIL import Image
-
+        import io
         img = Image.open(io.BytesIO(image_bytes))
         if img.size != (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT):
             img = img.resize(
@@ -117,7 +153,7 @@ def generate(
         log.info("Generated thumbnail: %s (%dx%d)", out.name, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
         return out
     except ImportError:
-        # No Pillow — save raw bytes
+        # No Pillow - save raw bytes
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(image_bytes)
         log.info("Generated thumbnail: %s (raw, no resize)", out.name)

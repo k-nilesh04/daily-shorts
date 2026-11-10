@@ -22,5 +22,6 @@ jobs:
       - run: python -m unittest discover -s tests
       - name: Check formatting
         run: |
-          pip install ruff
+          pip install "ruff>=0.8.0"
           ruff check src/ tests/
+          ruff format --check src/ tests/
