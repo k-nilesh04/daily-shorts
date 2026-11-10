@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, history, render, script_gen, thumbnail, tts, video_gen, youtube
+from . import captions, config, history, notify, render, script_gen, thumbnail, tts, video_gen, youtube
 from .util import log
 
 
@@ -60,6 +60,16 @@ def main() -> int:
 
     cfg = config.load()
     do_upload = args.upload or cfg.upload
+
+    try:
+        _run_pipeline(cfg, do_upload, args)
+        return 0
+    except Exception as error:  # noqa: BLE001
+        notify.notify_failure(cfg, str(error))
+        raise
+
+
+def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace) -> None:
     if do_upload:
         missing = [
             name for name, value in (
@@ -188,7 +198,10 @@ def main() -> int:
         text=meta.get("title", "Hello from Python"),
     )
 
-    # 4. render
+    # 4. normalize audio loudness (YouTube standard -14 LUFS)
+    tts.normalize_audio(voice)
+
+    # 5. render
     video = cfg.output_dir / "video.mp4"
     render.build(cfg, clips, voice, duration, words, video, cfg.work_dir / "render")
 
@@ -199,11 +212,17 @@ def main() -> int:
         thumb_path,
     )
 
+    # 4c. export SRT subtitles
+    srt_path = cfg.output_dir / "captions.srt"
+    captions.write_srt(words, srt_path)
+    log.info("Exported subtitles: %s", srt_path)
+
     # 5. upload
     if not do_upload:
         log.info("Upload skipped (dry run). Video: %s", video)
         if thumb:
             log.info("Thumbnail saved: %s", thumb)
+        notify.notify_dry_run(cfg, video)
         return 0
     vid = youtube.upload(cfg, video, meta)
     if thumb and vid:
@@ -211,6 +230,7 @@ def main() -> int:
 
     # 6. remember the topic only after a successful upload
     history.append(cfg.history_file, meta["topic"], meta["title"], vid)
+    notify.notify_success(cfg, video, meta, vid)
     return 0
 
 

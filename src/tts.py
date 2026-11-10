@@ -107,6 +107,26 @@ def trim_words(words: list[dict], target_seconds: float) -> list[dict]:
     return kept
 
 
+def normalize_audio(path: Path, target_lufs: float = -14.0) -> None:
+    """Normalize audio loudness to target LUFS using FFmpeg loudnorm filter."""
+    tmp = path.with_name(path.stem + ".normalized" + path.suffix)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(path),
+             "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11",
+             "-ar", "44100", "-c:a", "libmp3lame", "-q:a", "4", str(tmp)],
+            capture_output=True, text=True, check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        log.warning("Audio normalization skipped: %s", error)
+        return
+    if tmp.is_file() and tmp.stat().st_size > 0:
+        tmp.replace(path)
+        log.info("Audio normalized to %.1f LUFS", target_lufs)
+    else:
+        tmp.unlink(missing_ok=True)
+
+
 @retry(times=3, delay=5)
 def synthesize(cfg: Config, text: str, out: Path) -> tuple[float, list[dict]]:
     try:

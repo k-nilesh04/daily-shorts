@@ -110,6 +110,9 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           OMNI_MODEL: ${{ vars.OMNI_MODEL }}
           THUMBNAIL_MODEL: ${{ vars.THUMBNAIL_MODEL }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
           AI_VIDEO_MAX_USD: ${{ vars.AI_VIDEO_MAX_USD }}
           LAYOUT: ${{ vars.LAYOUT }}
           SEGMENT_SECONDS: ${{ vars.SEGMENT_SECONDS }}
@@ -127,6 +130,7 @@ jobs:
           path: |
             output/video.mp4
             output/thumbnail.jpg
+            output/captions.srt
             output/meta.json
           retention-days: 3
           if-no-files-found: ignore

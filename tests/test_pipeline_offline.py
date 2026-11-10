@@ -105,6 +105,17 @@ class RenderDesignTests(unittest.TestCase):
         self.assertNotIn("COMEDY SHORTS", content)
         self.assertIn(r"\pos(540,1440)", content)
 
+    def test_write_srt_exports_word_timings(self):
+        cfg = config.load()
+        words = [
+            {"text": "Hello", "start": 0.0, "end": 0.5},
+            {"text": "world", "start": 0.5, "end": 1.0},
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            path = captions.write_srt(words, Path(d) / "captions.srt")
+            content = path.read_text(encoding="utf-8")
+        self.assertIn("1\n00:00:00,000 --> 00:00:01,120\nHello world", content)
+
 
 if __name__ == "__main__":
     unittest.main()

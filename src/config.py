@@ -44,6 +44,11 @@ class Config:
     # Fixed header text is no longer rendered; only captions appear over the video.
     yt_category_id: str = field(default_factory=lambda: _env("YT_CATEGORY_ID", "23"))
 
+    # Email notifications (Gmail SMTP)
+    gmail_address: str = field(default_factory=lambda: _env("GMAIL_ADDRESS"))
+    gmail_app_password: str = field(default_factory=lambda: _env("GMAIL_APP_PASSWORD"))
+    notify_email: str = field(default_factory=lambda: _env("NOTIFY_EMAIL"))
+
     @property
     def frame_size(self) -> int:
         return min(int(self.width * 5 / 6), int(self.height * 0.47))

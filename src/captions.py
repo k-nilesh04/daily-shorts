@@ -90,3 +90,25 @@ def write_ass(cfg: Config, words: list[dict], path: Path) -> Path:
         )
     path.write_text("".join(lines), encoding="utf-8")
     return path
+
+
+def write_srt(words: list[dict], path: Path) -> Path:
+    """Export word timings as an SRT subtitle file."""
+    groups = group_words(words)
+    lines = []
+    for i, g in enumerate(groups, 1):
+        start = _srt_ts(g["start"])
+        end = _srt_ts(g["end"] + 0.12)
+        text = " ".join(w["text"] for w in g["words"])
+        lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def _srt_ts(sec: float) -> str:
+    sec = max(0.0, sec)
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = int(sec % 60)
+    ms = int(round((sec - int(sec)) * 1000))
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+work/
+scratch/
+.env
+client_secret*.json
+.git/
+.github/
+tests/
+*.md
+LICENSE

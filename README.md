@@ -4,7 +4,7 @@
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-87%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-102%20passing-brightgreen.svg)](#testing)
 
 ---
 
@@ -56,12 +56,14 @@ The pipeline runs on **GitHub Actions** (daily cron) or **locally**, and adapts 
 | Step | Module | Description |
 |------|--------|-------------|
 | 1 | `script_gen.py` | Generates story, metadata, and scene prompts (adapts word count to TTS rate) |
-| 2 | `tts.py` | Synthesizes narration + word timings via Edge-TTS |
+| 2 | `tts.py` | Synthesizes narration + word timings via Edge-TTS, normalizes audio to -14 LUFS |
 | 3 | `video_gen.py` | Generates 15s AI video scenes (Gemini Omni) or renders still-image (JSON2Video) |
 | 4 | `render.py` | Normalizes clips, overlays audio + animated karaoke captions, outputs MP4 |
 | 4b | `thumbnail.py` | Generates a custom thumbnail from the script using Gemini image generation (nano banana) |
+| 4c | `captions.py` | Exports SRT subtitles alongside the video |
 | 5 | `youtube.py` | Uploads video + thumbnail to YouTube (private by default) with retry + verification |
 | 6 | `history.py` | Records topic to avoid repetition |
+| 7 | `notify.py` | Sends email notification (Gmail SMTP) on success or failure |
 
 ### Adaptive Timing
 The pipeline measures real TTS duration and regenerates the script if it falls outside the accepted window (1–50 seconds). If narration is still too long after retries, audio and captions are trimmed to the target length. Minor timing variations are handled by looping clips.
@@ -212,7 +214,7 @@ The workflow verifies the refresh token **before** paid video generation, so exp
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env            # add Gemini key
-python -m unittest discover -s tests   # run tests (87 tests, 2 skipped without FFmpeg)
+python -m unittest discover -s tests   # run tests (102 tests, 2 skipped without FFmpeg)
 python -m src.main              # generate video (no upload)
 ```
 
@@ -238,22 +240,35 @@ daily-shorts/
 │   ├── config.py        # Environment-driven configuration
 │   ├── script_gen.py    # Story, metadata, scene prompts
 │   ├── video_gen.py     # Gemini Omni / JSON2Video generation
-│   ├── tts.py           # Narration + word timings (Edge-TTS)
+│   ├── tts.py           # Narration + word timings (Edge-TTS) + audio normalization
 │   ├── render.py        # FFmpeg assembly + motion design
 │   ├── thumbnail.py     # Custom thumbnail generation (Gemini nano banana)
-│   ├── captions.py      # Animated karaoke captions (ASS)
-│   ├── youtube.py       # Private-first upload + verification
+│   ├── captions.py      # Animated karaoke captions (ASS) + SRT export
+│   ├── notify.py        # Webhook notifications (Discord/Slack/Telegram)
+│   ├── youtube.py       # Private-first upload + verification + thumbnails
 │   ├── history.py       # Topic history tracking
 │   └── util.py          # Logging + retry helpers
-├── tests/               # Offline + mocked API tests (87 tests)
+├── tests/               # Offline + mocked API tests (102 tests)
 ├── scripts/
 │   └── get_youtube_token.py  # OAuth refresh token helper
-├── .github/workflows/
-│   └── daily-video.yml  # GitHub Actions workflow
-├── .env.example         # Environment template
-├── requirements.txt     # Python dependencies
+├── .github/
+│   ├── workflows/
+│   │   ├── daily-video.yml  # Daily cron + manual workflow
+│   │   └── tests.yml        # PR test workflow
+│   ├── ISSUE_TEMPLATE/      # Bug report + feature request
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── dependabot.yml
+├── Dockerfile               # Container support
+├── .dockerignore
+├── .env.example             # Environment template
+├── .editorconfig
+├── .pre-commit-config.yaml
+├── Makefile                 # Common dev commands
+├── pyproject.toml           # Project metadata
+├── requirements.txt         # Python dependencies
+├── LICENSE                  # MIT
 └── README.md
-```
+`
 
 ---
 
