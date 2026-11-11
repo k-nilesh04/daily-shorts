@@ -11,6 +11,7 @@ from . import (
     captions,
     config,
     history,
+    huggingface,
     notify,
     render,
     script_gen,
@@ -207,25 +208,43 @@ def _run_pipeline(cfg: config.Config, do_upload: bool, args: argparse.Namespace)
 
     # 3. Generate the configured video asset(s).
     is_json2video = cfg.video_provider == "json2video"
+    is_huggingface = cfg.video_provider == "huggingface"
     estimated_cost = (
-        None if is_json2video else round(video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2)
+        None
+        if (is_json2video or is_huggingface)
+        else round(video_gen.estimate_cost_usd(len(meta["scene_prompts"])), 2)
     )
     meta["video_generation"] = {
         "provider": cfg.video_provider,
-        "model": video_gen.JSON2VIDEO_MODEL if is_json2video else cfg.omni_model,
-        "resolution": video_gen.JSON2VIDEO_RESOLUTION if is_json2video else video_gen.RESOLUTION,
-        "scene_count": 1 if is_json2video else len(meta["scene_prompts"]),
+        "model": (
+            video_gen.JSON2VIDEO_MODEL
+            if is_json2video
+            else "huggingface-free"
+            if is_huggingface
+            else cfg.omni_model
+        ),
+        "resolution": (
+            video_gen.JSON2VIDEO_RESOLUTION
+            if is_json2video
+            else "512x512"
+            if is_huggingface
+            else video_gen.RESOLUTION
+        ),
+        "scene_count": (1 if is_json2video else len(meta["scene_prompts"])),
         "dry_run": cfg.dry_run,
         "estimated_video_cost_usd": estimated_cost,
     }
     meta_path = cfg.output_dir / "meta.json"
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    clips = video_gen.generate_scenes(
-        cfg,
-        meta["scene_prompts"],
-        cfg.work_dir / "scenes",
-        text=meta.get("title", "Hello from Python"),
-    )
+    if is_huggingface:
+        clips = huggingface.generate_scenes(cfg, meta["scene_prompts"], cfg.work_dir / "scenes")
+    else:
+        clips = video_gen.generate_scenes(
+            cfg,
+            meta["scene_prompts"],
+            cfg.work_dir / "scenes",
+            text=meta.get("title", "Hello from Python"),
+        )
 
     # 4. normalize audio loudness (YouTube standard -14 LUFS)
     tts.normalize_audio(voice)

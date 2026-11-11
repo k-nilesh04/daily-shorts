@@ -84,6 +84,8 @@ class Config:
     video_provider: str = field(default_factory=lambda: _env("VIDEO_PROVIDER", "gemini"))
     # No default image: a still-image render needs an explicit, on-brand image.
     json2video_image_url: str = field(default_factory=lambda: _env("JSON2VIDEO_IMAGE_URL"))
+    # Hugging Face API key (optional, increases rate limits for free inference)
+    huggingface_api_key: str = field(default_factory=lambda: _env("HUGGINGFACE_API_KEY"))
     yt_client_id: str = field(default_factory=lambda: _env("YT_CLIENT_ID"))
     yt_client_secret: str = field(default_factory=lambda: _env("YT_CLIENT_SECRET"))
     yt_refresh_token: str = field(default_factory=lambda: _env("YT_REFRESH_TOKEN"))
@@ -104,9 +106,9 @@ class Config:
         if not 30 <= self.target_seconds <= 60:
             raise ValueError("TARGET_SECONDS must be between 30 and 60")
         object.__setattr__(self, "video_provider", self.video_provider.lower().strip())
-        if self.video_provider not in {"gemini", "json2video"}:
+        if self.video_provider not in {"gemini", "json2video", "huggingface"}:
             raise ValueError(
-                f"VIDEO_PROVIDER must be 'gemini' or 'json2video' "
+                f"VIDEO_PROVIDER must be 'gemini', 'json2video', or 'huggingface' "
                 f"(got {self.video_provider!r}). Check your GitHub Variable "
                 f"VIDEO_PROVIDER under Settings -> Secrets and variables -> Actions -> Variables."
             )

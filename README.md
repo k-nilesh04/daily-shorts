@@ -130,6 +130,8 @@ Go to **Settings → Secrets and variables → Actions → Secrets**:
 |--------|----------|-------------|
 | `GEMINI_API_KEY` | ✅ Always | Gemini API key ([get one](https://aistudio.google.com/apikey)) |
 | `JSON2VIDEO_API_KEY` | JSON2Video only | From [json2video.com](https://json2video.com/) |
+| `HUGGINGFACE_API_KEY` | HuggingFace only | Optional — increases free inference rate limits |
+| `HUGGINGFACE_API_KEY` | HuggingFace only | Optional — increases free inference rate limits |
 | `OMNI_API_KEY` | Optional | Separate key for video (falls back to `GEMINI_API_KEY`) |
 | `YT_CLIENT_ID` | Upload only | OAuth Desktop app client ID |
 | `YT_CLIENT_SECRET` | Upload only | OAuth Desktop app client secret |
@@ -140,7 +142,7 @@ Go to **Settings → Secrets and variables → Actions → Variables**:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIDEO_PROVIDER` | `gemini` | `gemini` or `json2video` |
+| `VIDEO_PROVIDER` | `gemini` | `gemini`, `json2video`, or `huggingface` |
 | `JSON2VIDEO_IMAGE_URL` | — | Public image URL (required for JSON2Video) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Script generation model |
 | `OMNI_MODEL` | `gemini-omni-1.2-flash` | Video generation model |

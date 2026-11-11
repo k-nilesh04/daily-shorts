@@ -101,6 +101,7 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           OMNI_API_KEY: ${{ secrets.OMNI_API_KEY }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
           NICHE: ${{ vars.NICHE }}
           LANGUAGE: ${{ vars.LANGUAGE }}
           TTS_VOICE: ${{ vars.TTS_VOICE }}
