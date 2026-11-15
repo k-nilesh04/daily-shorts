@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       upload:
-        description: "Upload to YouTube? (false = render only, saved as artifact)"
+        description: "Upload the completed Short to YouTube? (false = save the AI-video render as an artifact)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Use test-pattern clips instead of paid AI video generation"
         type: boolean
         default: false
 
@@ -57,13 +61,18 @@ jobs:
           echo "CREDS_PRESENT=$creds" >> "$GITHUB_ENV"
           if [ "$requested" = "true" ] && [ "$creds" = "true" ]; then
             echo "UPLOAD=true" >> "$GITHUB_ENV"
-            echo "DRY_RUN=false" >> "$GITHUB_ENV"
           else
             echo "UPLOAD=false" >> "$GITHUB_ENV"
+          fi
+          # AI animation and YouTube upload are independent. A render-only run
+          # must still generate story scenes; dry run is an explicit choice.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "DRY_RUN=true" >> "$GITHUB_ENV"
+          else
+            echo "DRY_RUN=false" >> "$GITHUB_ENV"
           fi
           if [ "$requested" = "true" ] && [ "$creds" = "false" ]; then
-            echo "::warning::Missing upload secrets:$missing. Upload cannot run."
+            echo "::warning::Missing upload secrets:$missing. The Short will be rendered as an artifact but will not upload."
           fi
 
       - name: Offline smoke test
@@ -84,10 +93,6 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: python -m src.youtube --verify
-
-      - name: Explain scheduled render-only mode
-        if: github.event_name == 'schedule' && env.DRY_RUN == 'true'
-        run: echo "YouTube upload credentials are incomplete; this scheduled run will render placeholders without paid video generation."
 
       - name: Generate video
         env:
